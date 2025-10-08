@@ -1,5 +1,5 @@
-/**
- * �û���֤ API ·��
+﻿/**
+ * Auth routes
  */
 import { Router, type Request, type Response } from 'express'
 import { supabase, supabaseAnonClient } from '../config/database.js'
@@ -7,13 +7,15 @@ import { generateToken, authenticateToken } from '../middleware/auth.js'
 
 const router = Router()
 
-/**
- * �û�ע��
- * POST /api/auth/register
- */
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
+  const conflictResponse = { success: false, error: 'User already exists with this email' }
+
   try {
-    const { email, password, full_name } = req.body
+    const { email, password, full_name } = (req.body ?? {}) as {
+      email?: string
+      password?: string
+      full_name?: string
+    }
 
     if (!email || !password) {
       res.status(400).json({ success: false, error: 'Email and password are required' })
@@ -44,7 +46,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     }
 
     if (existingUser) {
-      res.status(409).json({ success: false, error: 'User already exists with this email' })
+      res.status(409).json(conflictResponse)
       return
     }
 
@@ -57,10 +59,11 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     if (createUserError || !createdUser?.user) {
       console.error('Supabase auth create user error:', createUserError)
       const isDuplicate = createUserError?.status === 422
-      res.status(isDuplicate ? 409 : 500).json({
-        success: false,
-        error: isDuplicate ? 'User already exists with this email' : createUserError?.message || 'Failed to create user',
-      })
+      res.status(isDuplicate ? 409 : 500).json(
+        isDuplicate
+          ? conflictResponse
+          : { success: false, error: createUserError?.message || 'Failed to create user' }
+      )
       return
     }
 
@@ -69,26 +72,46 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     if (full_name) {
       const { error: profileError } = await supabase
         .from('user_profiles')
-        .insert({
-          user_id: newUserId,
-          full_name,
-        })
+        .insert({ user_id: newUserId, full_name })
+
       if (profileError) {
         console.error('User profile creation error:', profileError)
       }
     }
 
-    const { data: userRecord } = await supabase
+    const { data: adminUser, error: adminUserError } = await supabase.auth.admin.getUserById(newUserId)
+    if (adminUserError) {
+      console.error('Supabase auth fetch user error:', adminUserError)
+    }
+
+    const { data: dbUser, error: dbUserError } = await supabase
       .from('users')
       .select('id, email, created_at')
       .eq('id', newUserId)
       .maybeSingle()
 
-    let token
+    if (dbUserError) {
+      console.error('Fetch user record error:', dbUserError)
+    }
+
+    const fallbackCreatedAt = createdUser.user.created_at ?? new Date().toISOString()
+    const finalUser = dbUser ?? (adminUser?.user
+      ? {
+          id: adminUser.user.id,
+          email: adminUser.user.email ?? email,
+          created_at: adminUser.user.created_at ?? fallbackCreatedAt,
+        }
+      : {
+          id: newUserId,
+          email,
+          created_at: fallbackCreatedAt,
+        })
+
+    let token: string
     try {
-      token = generateToken(newUserId, email)
-    } catch (e) {
-      console.error('Generate token error:', e)
+      token = generateToken(newUserId, finalUser.email)
+    } catch (generateError) {
+      console.error('Generate token error:', generateError)
       res.status(500).json({ success: false, error: 'Failed to generate token' })
       return
     }
@@ -97,27 +120,22 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       success: true,
       message: 'User registered successfully',
       data: {
-        user: userRecord ?? {
-          id: newUserId,
-          email,
-          created_at: createdUser.user.created_at ?? new Date().toISOString(),
-        },
+        user: finalUser,
         token,
       },
     })
   } catch (error) {
     console.error('Registration error:', error)
-    res.status(500).json({ success: false, error: error?.message || 'Internal server error' })
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' })
   }
 })
 
-/**
- * �û���¼
- * POST /api/auth/login
- */
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body
+    const { email, password } = (req.body ?? {}) as {
+      email?: string
+      password?: string
+    }
 
     if (!email || !password) {
       res.status(400).json({ success: false, error: 'Email and password are required' })
@@ -170,7 +188,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     })
   } catch (error) {
     console.error('Login error:', error)
-    res.status(500).json({ success: false, error: error?.message || 'Internal server error' })
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' })
   }
 })
 
@@ -208,26 +226,15 @@ router.get('/me', authenticateToken, async (req: Request, res: Response): Promis
   }
 })
 
-/**
- * �û��ǳ�
- * POST /api/auth/logout
- */
 router.post('/logout', authenticateToken, async (_req: Request, res: Response): Promise<void> => {
   try {
-    // ��ʵ��Ӧ���У������������¼�ǳ���־����������˻Ự״̬
-    res.json({
-      success: true,
-      message: 'Logout successful',
-    })
+    res.json({ success: true, message: 'Logout successful' })
   } catch (error) {
     console.error('Logout error:', error)
     res.status(500).json({ success: false, error: 'Internal server error' })
   }
 })
 
-/**
- * 调试：检�?Supabase 读路�? * GET /api/auth/debug/supabase
- */
 router.get('/debug/supabase', async (_req: Request, res: Response): Promise<void> => {
   try {
     const { data, error } = await supabase
@@ -248,9 +255,6 @@ router.get('/debug/supabase', async (_req: Request, res: Response): Promise<void
   }
 })
 
-/**
- * 调试：写�?users 表（使用占位密码�? * POST /api/auth/debug/insert
- */
 router.post('/debug/insert', async (_req: Request, res: Response): Promise<void> => {
   try {
     const email = `debug_${Date.now()}@example.com`

@@ -1,3 +1,4 @@
+﻿// env keys renamed: SUPABASE_* -> SB_*, VITE_SUPABASE_* -> VITE_SB_*
 import dotenv from 'dotenv'
 
 const result = dotenv.config()
@@ -46,9 +47,9 @@ export const env = {
   NODE_ENV: nodeEnv,
   IS_PRODUCTION: nodeEnv === 'production',
   PORT: toNumber(process.env.PORT, 3001),
-  SUPABASE_URL: getEnvValue('SUPABASE_URL', { required: true }),
-  SUPABASE_ANON_KEY: getEnvValue('SUPABASE_ANON_KEY', { required: true }),
-  SUPABASE_SERVICE_ROLE_KEY: getEnvValue('SUPABASE_SERVICE_ROLE_KEY', { required: true }),
+  SB_URL: getEnvValue('SB_URL', { required: true }),
+  SB_ANON_KEY: getEnvValue('SB_ANON_KEY', { required: true }),
+  SB_SERVICE_ROLE_KEY: getEnvValue('SB_SERVICE_ROLE_KEY', { required: true }),
   JWT_SECRET: getEnvValue('JWT_SECRET', {
     fallback: 'dev-jwt-secret',
     required: true,
@@ -70,8 +71,8 @@ export const env = {
 
 if (env.IS_PRODUCTION) {
   const requiredKeys: Array<keyof typeof env> = [
-    'SUPABASE_URL',
-    'SUPABASE_SERVICE_ROLE_KEY',
+    'SB_URL',
+    'SB_SERVICE_ROLE_KEY',
     'JWT_SECRET',
   ]
 
@@ -90,7 +91,6 @@ if (env.IS_PRODUCTION) {
     throw new Error('Missing required production environment variables: ' + missing.join(', '))
   }
 }
-
 
 if (env.CLIENT_ORIGINS.length === 0 && !env.IS_PRODUCTION) {
   console.warn('[env] No CLIENT_ORIGINS configured, using development defaults.')

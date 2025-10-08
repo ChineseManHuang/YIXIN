@@ -1,27 +1,28 @@
+ï»¿// env keys renamed: SUPABASE_* -> SB_*, VITE_SUPABASE_* -> VITE_SB_*
 import { createClient } from '@supabase/supabase-js'
 import { env } from './env.js'
 
-const supabaseUrl = env.SUPABASE_URL
-const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
-const supabaseAnonKey = env.SUPABASE_ANON_KEY
+const supabaseUrl = env.SB_URL
+const supabaseServiceRoleKey = env.SB_SERVICE_ROLE_KEY
+const supabaseAnonKey = env.SB_ANON_KEY
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables')
+if (!supabaseUrl || !supabaseServiceRoleKey) {
+  throw new Error('Missing SB_URL or SB_SERVICE_ROLE_KEY. Set them in server/Edge Function secrets.')
 }
 
 if (!supabaseAnonKey) {
-  throw new Error('Missing Supabase anonymous key')
+  throw new Error('Missing SB_ANON_KEY. Set it in server/Edge Function secrets when sharing anon client.')
 }
 
-// ´´½¨ Supabase ¿Í»§¶ËÊµÀı£¨Ê¹ÓÃ service_role key£©
-export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,
   },
 })
 
-// ÄäÃû¿Í»§¶ËÓÃÓÚÖ´ĞĞÓÃ»§µÇÂ¼µÈĞèÒªÄäÃûÃØÔ¿µÄ²Ù×÷
+export const supabase = supabaseAdmin
+
 export const supabaseAnonClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: false,
@@ -29,7 +30,7 @@ export const supabaseAnonClient = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
-// Êı¾İ¿â±íÃû³£Á¿
+// æ•°æ®åº“è¡¨åå¸¸é‡
 export const TABLES = {
   USERS: 'users',
   USER_PROFILES: 'user_profiles',
@@ -40,7 +41,7 @@ export const TABLES = {
   RESOURCES: 'resources',
 } as const
 
-// ÀàĞÍ¶¨Òå£¨ÓëÇ¨ÒÆ½Å±¾±£³ÖÒ»ÖÂ£©
+// ç±»å‹å®šä¹‰ï¼ˆä¸è¿ç§»è„šæœ¬ä¿æŒä¸€è‡´ï¼‰
 export interface User {
   id: string
   email: string
@@ -125,3 +126,4 @@ export interface EthicsCheckResult {
   confidence?: number
   detectedPatterns?: string[]
 }
+
