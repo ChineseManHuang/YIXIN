@@ -31,15 +31,19 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { data: existingUserData, error: existingUserError } = await supabase.auth.admin.getUserByEmail(email)
+    const { data: existingUser, error: existingUserError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle()
 
-    if (existingUserError && existingUserError.status !== 404) {
-      console.error('Supabase getUserByEmail error:', existingUserError)
+    if (existingUserError) {
+      console.error('Supabase user lookup error:', existingUserError)
       res.status(500).json({ success: false, error: 'Failed to verify user availability' })
       return
     }
 
-    if (existingUserData?.user) {
+    if (existingUser) {
       res.status(409).json({ success: false, error: 'User already exists with this email' })
       return
     }
@@ -52,7 +56,11 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 
     if (createUserError || !createdUser?.user) {
       console.error('Supabase auth create user error:', createUserError)
-      res.status(500).json({ success: false, error: createUserError?.message || 'Failed to create user' })
+      const isDuplicate = createUserError?.status === 422
+      res.status(isDuplicate ? 409 : 500).json({
+        success: false,
+        error: isDuplicate ? 'User already exists with this email' : createUserError?.message || 'Failed to create user',
+      })
       return
     }
 
