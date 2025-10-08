@@ -2,8 +2,7 @@
  * �û���֤ API ·��
  */
 import { Router, type Request, type Response } from 'express'
-import bcrypt from 'bcryptjs'
-import { supabase } from '../config/database.js'
+import { supabase, supabaseAnonClient } from '../config/database.js'
 import { generateToken, authenticateToken } from '../middleware/auth.js'
 
 const router = Router()
@@ -32,51 +31,55 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle()
+    const { data: existingUserData, error: existingUserError } = await supabase.auth.admin.getUserByEmail(email)
 
-    if (existingUser) {
+    if (existingUserError && existingUserError.status !== 404) {
+      console.error('Supabase getUserByEmail error:', existingUserError)
+      res.status(500).json({ success: false, error: 'Failed to verify user availability' })
+      return
+    }
+
+    if (existingUserData?.user) {
       res.status(409).json({ success: false, error: 'User already exists with this email' })
       return
     }
 
-    const passwordHash = await bcrypt.hash(password, 12)
+    const { data: createdUser, error: createUserError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    })
 
-    const { data: newUser, error: userError } = await supabase
-      .from('users')
-      .insert({
-        email,
-        password_hash: passwordHash,
-      })
-      .select('id, email, created_at')
-      .single()
-
-    if (userError || !newUser) {
-      console.error('User creation error:', userError)
-      res.status(500).json({ success: false, error: 'Failed to create user' })
+    if (createUserError || !createdUser?.user) {
+      console.error('Supabase auth create user error:', createUserError)
+      res.status(500).json({ success: false, error: createUserError?.message || 'Failed to create user' })
       return
     }
+
+    const newUserId = createdUser.user.id
 
     if (full_name) {
       const { error: profileError } = await supabase
         .from('user_profiles')
         .insert({
-          user_id: newUser.id,
+          user_id: newUserId,
           full_name,
         })
       if (profileError) {
         console.error('User profile creation error:', profileError)
-        // 不阻塞用户创建，返回时提示即可
       }
     }
 
-    let token: string
+    const { data: userRecord } = await supabase
+      .from('users')
+      .select('id, email, created_at')
+      .eq('id', newUserId)
+      .maybeSingle()
+
+    let token
     try {
-      token = generateToken(newUser.id, newUser.email)
-    } catch (e: any) {
+      token = generateToken(newUserId, email)
+    } catch (e) {
       console.error('Generate token error:', e)
       res.status(500).json({ success: false, error: 'Failed to generate token' })
       return
@@ -86,22 +89,22 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       success: true,
       message: 'User registered successfully',
       data: {
-        user: {
-          id: newUser.id,
-          email: newUser.email,
-          created_at: newUser.created_at,
+        user: userRecord ?? {
+          id: newUserId,
+          email,
+          created_at: createdUser.user.created_at ?? new Date().toISOString(),
         },
         token,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Registration error:', error)
     res.status(500).json({ success: false, error: error?.message || 'Internal server error' })
   }
 })
 
 /**
- * �û���¼
+ * �û���¼
  * POST /api/auth/login
  */
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
@@ -113,55 +116,56 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, email, password_hash, created_at')
-      .eq('email', email)
-      .single()
+    const { data: authData, error: authError } = await supabaseAnonClient.auth.signInWithPassword({
+      email,
+      password,
+    })
 
-    if (error || !user) {
+    if (authError || !authData?.user) {
       res.status(401).json({ success: false, error: 'Invalid email or password' })
       return
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash)
-    if (!isPasswordValid) {
-      res.status(401).json({ success: false, error: 'Invalid email or password' })
-      return
+    const userId = authData.user.id
+
+    const { data: userRecord, error: userError } = await supabase
+      .from('users')
+      .select('id, email, created_at')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (userError) {
+      console.error('Fetch user record error:', userError)
     }
 
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('full_name, avatar_url')
-      .eq('user_id', user.id)
-      .single()
+      .eq('user_id', userId)
+      .maybeSingle()
 
-    const token = generateToken(user.id, user.email)
+    const token = generateToken(userId, authData.user.email ?? email)
 
     res.json({
       success: true,
       message: 'Login successful',
       data: {
         user: {
-          id: user.id,
-          email: user.email,
-          created_at: user.created_at,
+          id: userId,
+          email: authData.user.email ?? email,
+          created_at: userRecord?.created_at ?? authData.user.created_at ?? new Date().toISOString(),
           full_name: profile?.full_name,
           avatar_url: profile?.avatar_url,
         },
         token,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Login error:', error)
     res.status(500).json({ success: false, error: error?.message || 'Internal server error' })
   }
 })
 
-/**
- * ��ȡ��ǰ�û���Ϣ
- * GET /api/auth/me
- */
 router.get('/me', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id
@@ -214,8 +218,7 @@ router.post('/logout', authenticateToken, async (_req: Request, res: Response): 
 })
 
 /**
- * 调试：检查 Supabase 读路径
- * GET /api/auth/debug/supabase
+ * 调试：检�?Supabase 读路�? * GET /api/auth/debug/supabase
  */
 router.get('/debug/supabase', async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -238,8 +241,7 @@ router.get('/debug/supabase', async (_req: Request, res: Response): Promise<void
 })
 
 /**
- * 调试：写入 users 表（使用占位密码）
- * POST /api/auth/debug/insert
+ * 调试：写�?users 表（使用占位密码�? * POST /api/auth/debug/insert
  */
 router.post('/debug/insert', async (_req: Request, res: Response): Promise<void> => {
   try {

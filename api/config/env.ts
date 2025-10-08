@@ -47,7 +47,7 @@ export const env = {
   IS_PRODUCTION: nodeEnv === 'production',
   PORT: toNumber(process.env.PORT, 3001),
   SUPABASE_URL: getEnvValue('SUPABASE_URL', { required: true }),
-  SUPABASE_ANON_KEY: getEnvValue('SUPABASE_ANON_KEY'),
+  SUPABASE_ANON_KEY: getEnvValue('SUPABASE_ANON_KEY', { required: true }),
   SUPABASE_SERVICE_ROLE_KEY: getEnvValue('SUPABASE_SERVICE_ROLE_KEY', { required: true }),
   JWT_SECRET: getEnvValue('JWT_SECRET', {
     fallback: 'dev-jwt-secret',

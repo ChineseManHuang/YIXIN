@@ -3,13 +3,26 @@ import { env } from './env.js'
 
 const supabaseUrl = env.SUPABASE_URL
 const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseAnonKey = env.SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
+if (!supabaseAnonKey) {
+  throw new Error('Missing Supabase anonymous key')
+}
+
 // 创建 Supabase 客户端实例（使用 service_role key）
 export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+})
+
+// 匿名客户端用于执行用户登录等需要匿名秘钥的操作
+export const supabaseAnonClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,
