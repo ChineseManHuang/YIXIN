@@ -1,0 +1,9 @@
+ - 准备环境变量：用 .env.example 为模板创建 .env，填上全新的 Supabase URL/Service Role key、JWT 密钥及可选的外部服务凭据。之前暴露的    key 必须在各平台后台撤销并重新生成。
+  - 更新数据库：在 Supabase 上执行 supabase/migrations/001_initial_schema.sql 和 002_update_schema.sql，让后端期望的 sessions、          kb_progress、ethics_logs 等表结构与代码一致。
+  - 运行或部署后端：确保使用 Node 20+，先 npm install，开发模式启动可以用 npm run dev（或 npm run server:socket / npm run client:dev
+    分开），线上部署则按你的平台配置（例如 Vercel，需要把环境变量同步过去，并确认 scripts/deploy.ts 的 Hook 指向正确服务）。
+  - 前端访问地址：如果后端域名不是默认的 http://localhost:3001，在前端环境里设置 VITE_API_URL 与 VITE_SOCKET_URL，确保浏览器能正确调
+    用 API 与 Socket。
+
+  完成这些步骤后，就可以在网站上正常使用了。后续建议先做一次端到端自测：注册/登录 → 创建会话 → 发送消息 → 检查 Supabase 中的消息
+  与 kb_progress。
