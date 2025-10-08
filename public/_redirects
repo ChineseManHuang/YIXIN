@@ -1,0 +1,5 @@
+# EdgeOne Pages重定向规则
+# 支持React Router的客户端路由
+
+# 所有路由重定向到index.html以支持SPA路由
+/*    /index.html   200
