@@ -79,8 +79,14 @@ export const useAuthStore = create<AuthState>()(
             return false
           }
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : '注册失败'
-          set({ error: errorMessage, isLoading: false })
+          const apiError = error as { status?: number; message?: string }
+          const status = apiError?.status
+          const message = apiError?.message || '注册失败'
+          console.error('Register error:', {
+            status,
+            message,
+          })
+          set({ error: message, isLoading: false })
           return false
         }
       },

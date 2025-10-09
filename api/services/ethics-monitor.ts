@@ -1,5 +1,5 @@
 import { supabase } from '../config/database'
-import type { EthicsCheckResult } from '../config/database'
+import type { UserProfile } from '../config/database'
 
 // 风险等级定义
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
@@ -311,7 +311,7 @@ export class EthicsMonitor {
    */
   static analyzeMessage(content: string, context?: {
     conversationHistory?: Array<{ role: string; content: string }>
-    userProfile?: any
+    userProfile?: Partial<UserProfile>
     sessionId?: string
   }): EthicsMonitorResult {
     const normalizedContent = content.toLowerCase().trim()
@@ -416,7 +416,7 @@ export class EthicsMonitor {
           contextScore: p.contextScore
         }))
       })
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('记录伦理检查结果失败:', error)
     }
   }

@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../lib/auth-store'
-import { Brain, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
 
 const Login: React.FC = () => {
   const navigate = useNavigate()
@@ -30,7 +30,7 @@ const Login: React.FC = () => {
     return () => {
       clearError()
     }
-  }, [])
+  }, [clearError])
 
   // 表单验证
   const validateForm = () => {

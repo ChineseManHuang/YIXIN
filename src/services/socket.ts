@@ -1,15 +1,15 @@
-import { io, Socket } from 'socket.io-client'
+﻿import { io, Socket } from 'socket.io-client'
 
 export interface SocketEvents {
-  // 连接事件
+  // 杩炴帴浜嬩欢
   joined: (data: { success: boolean; userId: string; sessionId?: string }) => void
   error: (data: { message: string }) => void
   
-  // 消息事件
+  // 娑堟伅浜嬩欢
   message_received: (data: MessageData) => void
   user_typing: (data: { userId: string; isTyping: boolean; sessionId: string }) => void
   
-  // 会话事件
+  // 浼氳瘽浜嬩欢
   session_status_changed: (data: { sessionId: string; status: string; updatedBy: string }) => void
   user_disconnected: (data: { userId: string; sessionId: string }) => void
 }
@@ -28,13 +28,24 @@ export interface TypingData {
   isTyping: boolean
 }
 
+type InternalSocketEvents = SocketEvents & {
+  connected: (data: { socketId?: string }) => void
+  disconnected: (data: { reason: string }) => void
+  connection_error: (data: { error: string }) => void
+  max_reconnect_attempts_reached: () => void
+}
+
+type EventPayload<T> = T extends (payload: infer P) => void ? P : void
+
+type EventCallback<T = unknown> = (payload: T) => void
+
 class SocketClient {
   private socket: Socket | null = null
   private isConnected = false
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
   private reconnectDelay = 1000
-  private eventListeners: Map<string, Function[]> = new Map()
+  private eventListeners: Map<string, EventCallback[]> = new Map()
 
   constructor() {
     this.setupSocket()
@@ -56,19 +67,31 @@ class SocketClient {
     const sanitize = (value: string) => (value.endsWith('/') ? value.slice(0, -1) : value)
 
     const configuredUrl = import.meta.env.VITE_SOCKET_URL?.trim()
+    const apiUrl = import.meta.env.VITE_API_URL?.trim()
+    let resolved: string
+
     if (configuredUrl) {
-      return sanitize(configuredUrl)
+      resolved = sanitize(configuredUrl)
+    } else if (apiUrl) {
+      resolved = sanitize(apiUrl.replace(/\/api$/, ''))
+    } else if (import.meta.env.DEV) {
+      resolved = 'http://localhost:3001'
+    } else if (typeof window !== 'undefined') {
+      resolved = sanitize(window.location.origin)
+    } else {
+      resolved = 'http://localhost:3001'
     }
 
     if (import.meta.env.DEV) {
-      return 'http://localhost:3001'
+      console.log('[env] Socket config', {
+        MODE: import.meta.env.MODE,
+        VITE_SOCKET_URL: configuredUrl || '(not set)',
+        VITE_API_URL: apiUrl || '(not set)',
+        RESOLVED_SOCKET_URL: resolved,
+      })
     }
 
-    if (typeof window !== 'undefined') {
-      return sanitize(window.location.origin)
-    }
-
-    return 'http://localhost:3001'
+    return resolved
   }
 
   private setupEventHandlers() {
@@ -86,9 +109,9 @@ class SocketClient {
       this.isConnected = false
       this.emit('disconnected', { reason })
       
-      // 自动重连
+      // 鑷姩閲嶈繛
       if (reason === 'io server disconnect') {
-        // 服务器主动断开，需要手动重连
+        // 鏈嶅姟鍣ㄤ富鍔ㄦ柇寮€锛岄渶瑕佹墜鍔ㄩ噸杩?
         this.reconnect()
       }
     })
@@ -100,7 +123,7 @@ class SocketClient {
       this.reconnect()
     })
 
-    // 设置服务器事件监听
+    // 璁剧疆鏈嶅姟鍣ㄤ簨浠剁洃鍚?
     this.socket.on('joined', (data) => {
       this.emit('joined', data)
     })
@@ -145,7 +168,7 @@ class SocketClient {
     }, delay)
   }
 
-  // 加入会话
+  // 鍔犲叆浼氳瘽
   public join(userId: string, sessionId?: string) {
     if (this.socket && this.isConnected) {
       this.socket.emit('join', { userId, sessionId })
@@ -154,39 +177,39 @@ class SocketClient {
     }
   }
 
-  // 发送输入状态
+  // 鍙戦€佽緭鍏ョ姸鎬?
   public sendTyping(data: TypingData) {
     if (this.socket && this.isConnected) {
       this.socket.emit('typing', data)
     }
   }
 
-  // 发送新消息通知
+  // 鍙戦€佹柊娑堟伅閫氱煡
   public sendMessage(data: MessageData) {
     if (this.socket && this.isConnected) {
       this.socket.emit('new_message', data)
     }
   }
 
-  // 更新会话状态
+  // 鏇存柊浼氳瘽鐘舵€?
   public updateSessionStatus(sessionId: string, status: string) {
     if (this.socket && this.isConnected) {
       this.socket.emit('session_update', { sessionId, status })
     }
   }
 
-  // 事件监听
-  public on<K extends keyof SocketEvents>(event: K, callback: SocketEvents[K]): void
-  public on(event: string, callback: Function): void
-  public on(event: string, callback: Function) {
+  // 浜嬩欢鐩戝惉
+  public on<K extends keyof InternalSocketEvents>(event: K, callback: InternalSocketEvents[K]): void
+  public on(event: string, callback: EventCallback): void
+  public on(event: string, callback: EventCallback) {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, [])
     }
     this.eventListeners.get(event)?.push(callback)
   }
 
-  // 移除事件监听
-  public off(event: string, callback?: Function) {
+  // 绉婚櫎浜嬩欢鐩戝惉
+  public off(event: string, callback?: EventCallback) {
     if (!callback) {
       this.eventListeners.delete(event)
       return
@@ -201,21 +224,24 @@ class SocketClient {
     }
   }
 
-  // 触发事件
-  private emit(event: string, data: any) {
+  // 瑙﹀彂浜嬩欢
+  private emit<K extends keyof InternalSocketEvents>(event: K, data: EventPayload<InternalSocketEvents[K]>): void
+  private emit(event: string, data: unknown): void {
     const listeners = this.eventListeners.get(event)
-    if (listeners) {
-      listeners.forEach(callback => {
-        try {
-          callback(data)
-        } catch (error) {
-          console.error(`Error in socket event listener for ${event}:`, error)
-        }
-      })
+    if (!listeners) {
+      return
     }
+
+    listeners.forEach((callback) => {
+      try {
+        callback(data)
+      } catch (error) {
+        console.error(`Error in socket event listener for ${event}:`, error)
+      }
+    })
   }
 
-  // 获取连接状态
+  // 鑾峰彇杩炴帴鐘舵€?
   public getConnectionStatus() {
     return {
       isConnected: this.isConnected,
@@ -224,7 +250,7 @@ class SocketClient {
     }
   }
 
-  // 手动重连
+  // 鎵嬪姩閲嶈繛
   public manualReconnect() {
     if (this.socket) {
       this.reconnectAttempts = 0
@@ -233,7 +259,7 @@ class SocketClient {
     }
   }
 
-  // 断开连接
+  // 鏂紑杩炴帴
   public disconnect() {
     if (this.socket) {
       this.socket.disconnect()
@@ -241,7 +267,7 @@ class SocketClient {
     }
   }
 
-  // 清理资源
+  // 娓呯悊璧勬簮
   public cleanup() {
     this.eventListeners.clear()
     if (this.socket) {
@@ -253,5 +279,10 @@ class SocketClient {
   }
 }
 
-// 导出单例实例
+// 瀵煎嚭鍗曚緥瀹炰緥
 export const socketClient = new SocketClient()
+
+
+
+
+

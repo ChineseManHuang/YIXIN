@@ -33,6 +33,12 @@ interface UserStats {
   joinDate: string
 }
 
+interface UserSettingsState {
+  notifications: boolean
+  darkMode: boolean
+  language: 'zh-CN' | 'en-US'
+}
+
 const Profile: React.FC = () => {
   const navigate = useNavigate()
   const { user, profile, isAuthenticated, logout } = useAuthStore()
@@ -95,9 +101,9 @@ const Profile: React.FC = () => {
   useEffect(() => {
     if (profile) {
       setEditForm({
-        fullName: profile.full_name || '',
-        bio: profile.bio || '',
-        preferences: profile.preferences || {}
+        fullName: profile.full_name ?? '',
+        bio: profile.bio ?? '',
+        preferences: (profile.preferences ?? {}) as Record<string, unknown>
       })
     }
   }, [profile])
@@ -129,7 +135,7 @@ const Profile: React.FC = () => {
   }
 
   // 处理设置更改
-  const handleSettingChange = (key: string, value: any) => {
+  const handleSettingChange = <K extends keyof UserSettingsState>(key: K, value: UserSettingsState[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }))
     // TODO: 保存设置到后端
   }
@@ -348,7 +354,7 @@ const Profile: React.FC = () => {
                   </div>
                   <select
                     value={settings.language}
-                    onChange={(e) => handleSettingChange('language', e.target.value)}
+                    onChange={(e) => handleSettingChange('language', e.target.value as UserSettingsState['language'])}
                     className="px-3 py-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="zh-CN">中文</option>

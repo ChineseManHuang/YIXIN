@@ -1,29 +1,73 @@
-/**
- * ÏûÏ¢¹ÜÀíAPIÂ·ÓÉ
- * ´¦ÀíAI×ÉÑ¯¶Ô»°ÖĞµÄÏûÏ¢·¢ËÍ¡¢½ÓÊÕ¡¢ÀúÊ·¼ÇÂ¼µÈ¹¦ÄÜ
+ï»¿/**
+ * æ¶ˆæ¯ç®¡ç†APIè·¯ç”±
+ * å¤„ç†AIå’¨è¯¢å¯¹è¯ä¸­çš„æ¶ˆæ¯å‘é€ã€æ¥æ”¶ã€å†å²è®°å½•ç­‰åŠŸèƒ½
  */
 import { Router, type Request, type Response } from 'express'
 import { supabase, type KBProgress } from '../config/database.js'
 import { authenticateToken } from '../middleware/auth.js'
-import { bailianService } from '../services/bailian'
-import { KBEngine } from '../services/kb-engine'
+import { bailianService, type CounselingResponse, type UsageStats, type EthicsCheckResult } from '../services/bailian'
+import { KBEngine, type KBProgressAssessment } from '../services/kb-engine'
 import { EthicsMonitor } from '../services/ethics-monitor'
 
 const router = Router()
 
-// ËùÓĞÏûÏ¢Â·ÓÉ¶¼ĞèÒªÈÏÖ¤
+interface CreateMessageBody {
+  session_id?: string
+  content?: unknown
+  message_type?: string
+  metadata?: Record<string, unknown>
+}
+
+interface SessionWithUserProfile {
+  id: string
+  status: 'active' | 'completed' | 'paused'
+  title: string
+  current_kb_step: number
+  users: {
+    id: string
+    email: string
+    user_profiles?: Array<{
+      full_name?: string
+      age?: number
+      gender?: string
+      occupation?: string
+    }>
+  }
+}
+
+interface GeneratedResponse {
+  content: string
+  type: 'text'
+  metadata: Record<string, unknown>
+}
+
+interface MessageWithSession {
+  id: string
+  sessions: {
+    user_id: string
+  }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+// æ‰€æœ‰æ¶ˆæ¯è·¯ç”±éƒ½éœ€è¦è®¤è¯
 router.use(authenticateToken)
 
 /**
- * ·¢ËÍÏûÏ¢µ½AI×ÉÑ¯»á»°
+ * å‘é€æ¶ˆæ¯åˆ°AIå’¨è¯¢ä¼šè¯
  * POST /api/messages
  */
 router.post('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { session_id, content, message_type = 'text', metadata = {} } = req.body
+    const body = (req.body ?? {}) as Partial<CreateMessageBody>
+    const sessionId = typeof body.session_id === 'string' ? body.session_id : ''
+    const rawContent = body.content
+    const messageType = typeof body.message_type === 'string' ? body.message_type : 'text'
+    const metadata = isRecord(body.metadata) ? body.metadata : {}
     const userId = req.user!.id
 
-    if (!session_id || typeof content !== 'string' || content.trim().length === 0) {
+    if (!sessionId || typeof rawContent !== 'string' || rawContent.trim().length === 0) {
       res.status(400).json({
         success: false,
         error: 'Session ID and content are required',
@@ -31,13 +75,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const trimmedContent = content.trim()
+    const trimmedContent = rawContent.trim()
 
-    // ÑéÖ¤»á»°ËùÓĞÈ¨
+    // éªŒè¯ä¼šè¯æ‰€æœ‰æƒ
     const { data: sessionRecord, error: sessionError } = await supabase
       .from('sessions')
       .select('id, status, title, current_kb_step')
-      .eq('id', session_id)
+      .eq('id', sessionId)
       .eq('user_id', userId)
       .single()
 
@@ -57,14 +101,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    // ±£´æÓÃ»§ÏûÏ¢
+    // ä¿å­˜ç”¨æˆ·æ¶ˆæ¯
     const { data: userMessage, error: userMessageError } = await supabase
       .from('messages')
       .insert({
-        session_id,
+        session_id: sessionId,
         sender_type: 'user',
         content: trimmedContent,
-        message_type,
+        message_type: messageType,
         metadata,
       })
       .select('*')
@@ -79,7 +123,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    // »ñÈ¡»á»°ºÍÓÃ»§ĞÅÏ¢
+    // è·å–ä¼šè¯å’Œç”¨æˆ·ä¿¡æ¯
     const { data: sessionData, error: sessionDataError } = await supabase
       .from('sessions')
       .select(`
@@ -95,7 +139,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           )
         )
       `)
-      .eq('id', session_id)
+      .eq('id', sessionId)
       .eq('user_id', userId)
       .single()
 
@@ -107,12 +151,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    // »ñÈ¡»ò³õÊ¼»¯ KB ½ø¶È
+    const sessionWithUser = sessionData as SessionWithUserProfile
+
+    // è·å–æˆ–åˆå§‹åŒ– KB è¿›åº¦
     let kbProgress: KBProgress | null = null
     const { data: kbProgressRecord, error: kbProgressError } = await supabase
       .from('kb_progress')
       .select('*')
-      .eq('session_id', session_id)
+      .eq('session_id', sessionId)
       .single()
 
     if (kbProgressRecord) {
@@ -123,17 +169,17 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
     if (!kbProgress) {
       try {
-        kbProgress = await KBEngine.initializeKBProgress(session_id, userId)
+        kbProgress = await KBEngine.initializeKBProgress(sessionId, userId)
       } catch (initializeError) {
         console.error('Initialize KB progress error:', initializeError)
       }
     }
 
-    // »ñÈ¡¶Ô»°ÀúÊ·£¨°üº¬×îĞÂÓÃ»§ÏûÏ¢£©
+    // è·å–å¯¹è¯å†å²ï¼ˆåŒ…å«æœ€æ–°ç”¨æˆ·æ¶ˆæ¯ï¼‰
     const { data: historyData, error: historyError } = await supabase
       .from('messages')
       .select('sender_type, content, created_at')
-      .eq('session_id', session_id)
+      .eq('session_id', sessionId)
       .order('created_at', { ascending: true })
       .limit(20)
 
@@ -147,10 +193,10 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       timestamp: new Date(msg.created_at),
     }))
 
-    const primaryProfile = sessionData.users.user_profiles?.[0]
+    const primaryProfile = sessionWithUser.users.user_profiles?.[0]
 
     const context = {
-      sessionId: session_id,
+      sessionId: sessionId,
       userId,
       kbStage: (kbProgress?.current_stage || 'KB-01') as 'KB-01' | 'KB-02' | 'KB-03' | 'KB-04' | 'KB-05',
       userProfile: primaryProfile
@@ -158,24 +204,24 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
             age: primaryProfile.age,
             gender: primaryProfile.gender,
             occupation: primaryProfile.occupation,
-            previousSessions: 0, // TODO: Í³¼ÆÀúÊ·»á»°ÊıÁ¿
+            previousSessions: 0, // TODO: ç»Ÿè®¡å†å²ä¼šè¯æ•°é‡
           }
         : undefined,
       conversationHistory,
-      currentIssues: sessionData.title ? [sessionData.title] : undefined,
+      currentIssues: sessionWithUser.title ? [sessionWithUser.title] : undefined,
       riskLevel: 'low' as 'low' | 'medium' | 'high' | 'critical',
     }
 
-    // ÆÀ¹À KB ½×¶Î
-    let progressAssessment
+    // è¯„ä¼° KB é˜¶æ®µ
+    let progressAssessment: KBProgressAssessment | null = null
     try {
       if (kbProgress) {
         progressAssessment = KBEngine.assessStageProgressFromRecord(kbProgress, conversationHistory)
       } else {
-        progressAssessment = await KBEngine.assessStageProgress(session_id, conversationHistory)
+        progressAssessment = await KBEngine.assessStageProgress(sessionId, conversationHistory)
       }
-    } catch (error) {
-      console.error('KB½ø¶ÈÆÀ¹ÀÊ§°Ü:', error)
+    } catch (error: unknown) {
+      console.error('KBè¿›åº¦è¯„ä¼°å¤±è´¥:', error)
       progressAssessment = {
         currentStage: context.kbStage,
         canProgress: false,
@@ -186,13 +232,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // µ÷ÓÃ°ÙÁ¶·şÎñÉú³É»Ø¸´
-    let aiResponse: { content: string; type: 'text'; metadata: Record<string, any> }
-    let ethicsCheck: any = null
-    let usage: any = null
+    // è°ƒç”¨ç™¾ç‚¼æœåŠ¡ç”Ÿæˆå›å¤
+    let aiResponse: GeneratedResponse
+    let ethicsCheck: EthicsCheckResult | null = null
+    let usage: UsageStats | null = null
 
     try {
-      const result = await bailianService.generateCounselingResponse(context, trimmedContent)
+      const result: CounselingResponse = await bailianService.generateCounselingResponse(context, trimmedContent)
       aiResponse = {
         content: result.response,
         type: 'text',
@@ -207,12 +253,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       usage = result.usage
 
       if (ethicsCheck && (ethicsCheck.riskLevel !== 'low' || ethicsCheck.concerns.length > 0)) {
-        await EthicsMonitor.logEthicsCheck(session_id, userId, trimmedContent, ethicsCheck)
+        await EthicsMonitor.logEthicsCheck(sessionId, userId, trimmedContent, ethicsCheck)
       }
-    } catch (error) {
-      console.error('AI»Ø¸´Éú³ÉÊ§°Ü:', error)
+    } catch (error: unknown) {
+      console.error('AIå›å¤ç”Ÿæˆå¤±è´¥:', error)
       aiResponse = {
-        content: '±§Ç¸£¬ÎÒÏÖÔÚÓöµ½ÁËÒ»Ğ©¼¼ÊõÎÊÌâ¡£ÇëÉÔºóÔÙÊÔ£¬»òÕßÁªÏµÎÒÃÇµÄ¼¼ÊõÖ§³Ö¡£ÄúµÄ°²È«ºÍÌåÑé¶ÔÎÒÃÇºÜÖØÒª¡£',
+        content: 'æŠ±æ­‰ï¼Œæˆ‘ç°åœ¨é‡åˆ°äº†ä¸€äº›æŠ€æœ¯é—®é¢˜ã€‚è¯·ç¨åå†è¯•ï¼Œæˆ–è€…è”ç³»æˆ‘ä»¬çš„æŠ€æœ¯æ”¯æŒã€‚æ‚¨çš„å®‰å…¨å’Œä½“éªŒå¯¹æˆ‘ä»¬å¾ˆé‡è¦ã€‚',
         type: 'text',
         metadata: {
           kb_stage: progressAssessment?.currentStage ?? context.kbStage,
@@ -221,9 +267,9 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // ¸üĞÂ KB ½ø¶È
+    // æ›´æ–° KB è¿›åº¦
     try {
-      const totalMessages = (historyData?.length || 0) + 2 // ±¾´Î¶Ô»°°üº¬ÓÃ»§ÓëAI¸÷Ò»Ìõ
+      const totalMessages = (historyData?.length || 0) + 2 // æœ¬æ¬¡å¯¹è¯åŒ…å«ç”¨æˆ·ä¸AIå„ä¸€æ¡
       const previousStageMessages = kbProgress?.stage_messages ?? 0
       const currentStageBeforeUpdate = kbProgress?.current_stage || context.kbStage
       const stageMessages = progressAssessment
@@ -232,14 +278,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           : 2
         : previousStageMessages + 2
 
-      await KBEngine.updateKBProgress(session_id, totalMessages, stageMessages, {
+      await KBEngine.updateKBProgress(sessionId, totalMessages, stageMessages, {
         completionRate: progressAssessment?.completionRate || 0,
         lastAssessment: new Date().toISOString(),
         canProgress: progressAssessment?.canProgress || false,
       })
 
       if (progressAssessment?.canProgress && progressAssessment.nextStage) {
-        const nextStage = await KBEngine.progressToNextStage(session_id)
+        const nextStage = await KBEngine.progressToNextStage(sessionId)
         if (nextStage) {
           aiResponse.metadata.stage_transition = {
             from: currentStageBeforeUpdate,
@@ -250,15 +296,15 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           aiResponse.metadata.kb_stage = nextStage
         }
       }
-    } catch (error) {
-      console.error('KB½ø¶È¸üĞÂÊ§°Ü:', error)
+    } catch (error: unknown) {
+      console.error('KBè¿›åº¦æ›´æ–°å¤±è´¥:', error)
     }
 
-    // ±£´æ AI »Ø¸´
+    // ä¿å­˜ AI å›å¤
     const { data: aiMessage, error: aiMessageError } = await supabase
       .from('messages')
       .insert({
-        session_id,
+        session_id: sessionId,
         sender_type: 'ai',
         content: aiResponse.content,
         message_type: aiResponse.type,
@@ -279,7 +325,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     await supabase
       .from('sessions')
       .update({ updated_at: new Date().toISOString() })
-      .eq('id', session_id)
+      .eq('id', sessionId)
 
     res.status(201).json({
       success: true,
@@ -291,7 +337,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         ethics_check: ethicsCheck,
       },
     })
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Send message error:', error)
     res.status(500).json({
       success: false,
@@ -301,19 +347,19 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 })
 
 /**
- * »ñÈ¡»á»°µÄÏûÏ¢ÀúÊ·
- * GET /api/messages/:session_id
+ * è·å–ä¼šè¯çš„æ¶ˆæ¯å†å²
+ * GET /api/messages/:sessionId
  */
-router.get('/:session_id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:sessionId', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { session_id } = req.params
+    const { sessionId } = req.params
     const { limit = 50, offset = 0, before_id } = req.query
     const userId = req.user!.id
 
     const { data: session } = await supabase
       .from('sessions')
       .select('id')
-      .eq('id', session_id)
+      .eq('id', sessionId)
       .eq('user_id', userId)
       .single()
 
@@ -328,7 +374,7 @@ router.get('/:session_id', async (req: Request, res: Response): Promise<void> =>
     let query = supabase
       .from('messages')
       .select('*')
-      .eq('session_id', session_id)
+      .eq('session_id', sessionId)
       .order('created_at', { ascending: false })
       .range(Number(offset), Number(offset) + Number(limit) - 1)
 
@@ -364,7 +410,7 @@ router.get('/:session_id', async (req: Request, res: Response): Promise<void> =>
         has_more: messages?.length === Number(limit),
       },
     })
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Get messages error:', error)
     res.status(500).json({
       success: false,
@@ -374,7 +420,7 @@ router.get('/:session_id', async (req: Request, res: Response): Promise<void> =>
 })
 
 /**
- * É¾³ıÏûÏ¢
+ * åˆ é™¤æ¶ˆæ¯
  * DELETE /api/messages/:id
  */
 router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
@@ -383,7 +429,7 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.id
 
     const { data: message, error: messageError } = await supabase
-      .from('messages')
+      .from<MessageWithSession>('messages')
       .select(`
         id,
         sessions!inner(
@@ -393,7 +439,7 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
       .eq('id', id)
       .single()
 
-    if (messageError || !message || (message.sessions as any).user_id !== userId) {
+    if (messageError || !message || message.sessions.user_id !== userId) {
       res.status(404).json({
         success: false,
         error: 'Message not found or access denied',
@@ -419,7 +465,7 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
       success: true,
       message: 'Message deleted successfully',
     })
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Delete message error:', error)
     res.status(500).json({
       success: false,
@@ -429,82 +475,20 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
 })
 
 /**
- * Éú³ÉAI»Ø¸´£¨ÁÙÊ±Ä£Äâº¯Êı£¬ºóĞø½«¼¯³É°¢ÀïÔÆ°ÙÁ¶API£©
+ * ç”ŸæˆAIå›å¤ï¼ˆä¸´æ—¶æ¨¡æ‹Ÿå‡½æ•°ï¼Œåç»­å°†é›†æˆé˜¿é‡Œäº‘ç™¾ç‚¼APIï¼‰
  */
-async function generateAIResponse(
-  userMessage: string,
-  currentKbStep: number,
-  metadata: any
-): Promise<{ content: string; type: string; metadata: any }> {
-  // ¸ù¾İµ±Ç°KB²½ÖèÉú³ÉÏàÓ¦µÄ»Ø¸´
-  const kbResponses = {
-    1: {
-      content: `¸ĞĞ»Äú¿ªÊ¼AI×ÉÑ¯¡£ÎÒÊÇÄúµÄ×¨ÒµĞÄÀí½¡¿µ¹ËÎÊ¡£ÔÚ¿ªÊ¼Ö®Ç°£¬ÈÃÎÒÎªÄú½éÉÜÒ»ÏÂÎÒÃÇµÄ×ÉÑ¯Á÷³Ì¡£
-
-ÎÒÃÇ½«Í¨¹ı5¸ö²½ÖèÀ´°ïÖúÄú£º
-1. EMS½éÉÜºÍ¹æ·¶»¯
-2. É­ÁÖÒşÓ÷ºÍºÓÁ÷¸ÅÄî
-3. YSQ-S3É­ÁÖÎÊÌâÆÀ¹À
-4. ·Ö²ã´¥·¢¶¯Ì¬Ê÷·ÖÎö
-5. RNTÆÀ¹À·Ö²ã´¥·¢
-
-ÏÖÔÚ£¬ÈÃÎÒÃÇ´ÓµÚÒ»²½¿ªÊ¼¡£Çë¸æËßÎÒÄú½ñÌìÏ£ÍûÌ½ÌÖµÄÖ÷ÒªÎÊÌâ»òÀ§ÈÅÊÇÊ²Ã´£¿`,
-      type: 'text',
-      metadata: { kb_step: 1, step_name: 'EMS½éÉÜºÍ¹æ·¶»¯' }
-    },
-    2: {
-      content: `ºÜºÃ£¬ÏÖÔÚÈÃÎÒÃÇ½øÈëµÚ¶ş²½£ºÉ­ÁÖÒşÓ÷ºÍºÓÁ÷¸ÅÄî¡£
-
-ÏëÏóÄúµÄÄÚĞÄÊÀ½ç¾ÍÏñÒ»Æ¬É­ÁÖ£¬Ã¿Ò»ÖÖÇéĞ÷ºÍÏë·¨¶¼ÊÇÉ­ÁÖÖĞµÄ²»Í¬ÔªËØ¡£ÓĞĞ©ÊÇ¸ß´óµÄÊ÷Ä¾£¨ºËĞÄĞÅÄî£©£¬ÓĞĞ©ÊÇ¹àÄ¾´Ô£¨ÈÕ³£Ïë·¨£©£¬»¹ÓĞÁ÷ÌÊµÄºÓÁ÷£¨ÇéĞ÷Á÷¶¯£©¡£
-
-ÔÚÕâ¸öÉ­ÁÖÖĞ£¬Äú¾õµÃÄÄĞ©ÇøÓòÊÇÑô¹âÃ÷ÃÄµÄ£¿ÄÄĞ©ÇøÓò¿ÉÄÜ±È½ÏÒõ°µ£¿`,
-      type: 'text',
-      metadata: { kb_step: 2, step_name: 'É­ÁÖÒşÓ÷ºÍºÓÁ÷¸ÅÄî' }
-    },
-    3: {
-      content: `ÏÖÔÚÎÒÃÇ½øÈëYSQ-S3É­ÁÖÎÊÌâÆÀ¹À½×¶Î¡£Õâ½«°ïÖúÎÒÃÇÊ¶±ğÄúÄÚĞÄÉ­ÁÖÖĞ¿ÉÄÜ´æÔÚµÄÒ»Ğ©ºËĞÄÄ£Ê½¡£
-
-ÇëË¼¿¼ÒÔÏÂ¼¸¸ö·½Ãæ£º
-- ÔÚÈË¼Ê¹ØÏµÖĞ£¬ÄúÊÇ·ñ¾­³£µ£ĞÄ±»Å×Æú£¿
-- ÄúÊÇ·ñ¾õµÃ×Ô¼º²»¹»ºÃ£¬²»ÖµµÃ±»°®£¿
-- ÄúÊÇ·ñ¾­³£¸Ğµ½ĞèÒª¿ØÖÆÖÜÎ§µÄ»·¾³£¿
-
-Çë·ÖÏíÄú¶ÔÕâĞ©ÎÊÌâµÄ¸ĞÊÜ¡£`,
-      type: 'text',
-      metadata: { kb_step: 3, step_name: 'YSQ-S3É­ÁÖÎÊÌâ' }
-    },
-    4: {
-      content: `»ùÓÚÄúµÄ·ÖÏí£¬ÈÃÎÒÃÇ¹¹½¨ÄúµÄ·Ö²ã´¥·¢¶¯Ì¬Ê÷¡£Õâ¸öÊ÷×´½á¹¹½«°ïÖúÎÒÃÇÀí½âÄúµÄÇéĞ÷·´Ó¦Ä£Ê½¡£
-
-ÔÚÄúµÄÇéĞ÷Ê÷ÖĞ£¬ÎÒ¿´µ½ÁË¼¸¸öÖØÒªµÄ´¥·¢µã¡£ÈÃÎÒÃÇÉîÈëÌ½ÌÖÕâĞ©´¥·¢ÒòËØÊÇÈçºÎÏà»¥¹ØÁªµÄ¡£
-
-ÄúÄÜÃèÊöÒ»ÏÂ×î½üÒ»´ÎÇ¿ÁÒÇéĞ÷·´Ó¦µÄ¾ßÌåÇé¿öÂğ£¿`,
-      type: 'text',
-      metadata: { kb_step: 4, step_name: '·Ö²ã´¥·¢¶¯Ì¬Ê÷' }
-    },
-    5: {
-      content: `×îºó£¬ÈÃÎÒÃÇ½øĞĞRNT£¨ÖØ¸´ĞÔ¸ºÃæË¼Î¬£©ÆÀ¹À¡£Õâ½«°ïÖúÎÒÃÇÊ¶±ğºÍ´¦ÀíÄÇĞ©·´¸´³öÏÖµÄ¸ºÃæË¼Î¬Ä£Ê½¡£
-
-»ùÓÚÎÒÃÇÖ®Ç°µÄ¶Ô»°£¬ÎÒ×¢Òâµ½Ò»Ğ©¿ÉÄÜµÄRNTÄ£Ê½¡£ÈÃÎÒÃÇÒ»ÆğÖÆ¶¨Ò»¸ö¸öĞÔ»¯µÄÓ¦¶Ô²ßÂÔ¡£
-
-Äú¾õµÃÄÄÖÖ·ÅËÉ¼¼ÇÉ¶ÔÄú×îÓĞĞ§£¿ÉîºôÎü¡¢ÕıÄîÚ¤Ïë£¬»¹ÊÇÆäËû·½·¨£¿`,
-      type: 'text',
-      metadata: { kb_step: 5, step_name: 'RNTÆÀ¹À·Ö²ã´¥·¢' }
-    }
-  }
-
-  const response = kbResponses[currentKbStep as keyof typeof kbResponses] || {
-    content: `¸ĞĞ»ÄúµÄ·ÖÏí¡£ÈÃÎÒ»ùÓÚÄúµÄÇé¿öÎªÄúÌá¹©Ò»Ğ©½¨ÒéºÍÖ§³Ö¡£Çë¼ÌĞø¸æËßÎÒ¸ü¶à¹ØÓÚÄúµÄ¸ĞÊÜ¡£`,
-    type: 'text',
-    metadata: { kb_step: currentKbStep }
-  }
-
-  // Ä£ÄâAPIµ÷ÓÃÑÓ³Ù
-  await new Promise((resolve) => setTimeout(resolve, 1000))
-
-  return response
-}
-
 export default router
+
+
+
+
+
+
+
+
+
+
+
+
 
 

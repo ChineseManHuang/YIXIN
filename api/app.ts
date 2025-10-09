@@ -12,20 +12,33 @@ import authRoutes from './routes/auth.js'
 import sessionsRoutes from './routes/sessions.js'
 import messagesRoutes from './routes/messages.js'
 import voiceRoutes from './routes/voice.js'
+import healthRoutes from './routes/health.js'
 import { env } from './config/env.js'
 
 const app: express.Application = express()
 
-const corsOrigin = env.CLIENT_ORIGINS.length > 0 ? env.CLIENT_ORIGINS : true
+const allowedOrigins = env.CLIENT_ORIGINS
 
 const corsOptions: CorsOptions = {
-  origin: corsOrigin,
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error('Origin not allowed by CORS: ' + origin), false)
+  },
   credentials: true,
+  methods: ['POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'apikey'],
 }
 
 app.use(cors(corsOptions))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+app.options('*', cors(corsOptions), (_req, res) => {
+  res.sendStatus(204)
+})
 
 /**
  * API Routes
@@ -34,6 +47,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/sessions', sessionsRoutes)
 app.use('/api/messages', messagesRoutes)
 app.use('/api/voice', voiceRoutes)
+app.use('/', healthRoutes)
 
 /**
  * health
@@ -51,13 +65,20 @@ app.use(
 /**
  * error handler middleware
  */
-app.use((error: any, req: Request, res: Response, _next: NextFunction) => {
+app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  void _req
+  void _next
   try {
-    console.error('Unhandled error:', error?.stack || error)
-  } catch (_e) {}
+    const stack = error instanceof Error ? error.stack : undefined
+    console.error('Unhandled error:', stack ?? error)
+  } catch (loggingError) {
+    console.error('Failed to log error:', loggingError)
+  }
+
+  const message = error instanceof Error ? error.message : 'Server internal error'
   res.status(500).json({
     success: false,
-    error: error?.message || 'Server internal error',
+    error: message,
   })
 })
 

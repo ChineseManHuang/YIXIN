@@ -1,17 +1,17 @@
-import { createServer } from 'http'
+﻿import { createServer } from 'http'
 import app from './app.js'
 import { initializeSocket } from './services/socket.js'
 import { env } from './config/env.js'
 
 const PORT = env.PORT
 
-// 创建HTTP服务器
+// 创建HTTP服务
 const server = createServer(app)
 
 // 初始化Socket.io
-const socketService = initializeSocket(server)
+initializeSocket(server)
 
-// 启动服务器
+// 启动服务
 server.listen(PORT, () => {
   console.log('🚀 Server running on port ' + PORT)
   console.log('📡 Socket.io server initialized')
@@ -34,3 +34,4 @@ process.on('SIGINT', () => {
     process.exit(0)
   })
 })
+

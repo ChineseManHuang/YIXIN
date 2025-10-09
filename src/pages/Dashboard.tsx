@@ -15,7 +15,6 @@ import {
   MoreVertical,
   Search,
   Filter,
-  Brain,
   User,
   Settings,
   LogOut,
@@ -358,7 +357,7 @@ const Dashboard: React.FC = () => {
                 <Filter className="w-4 h-4 text-gray-400" />
                 <select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'completed' | 'paused')}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">全部状态</option>

@@ -1,21 +1,31 @@
-import { Request, Response, NextFunction } from 'express'
-import jwt from 'jsonwebtoken'
+﻿import { Request, Response, NextFunction } from 'express'
+import jwt, { type JwtPayload } from 'jsonwebtoken'
 import { supabase } from '../config/database.js'
 import { env } from '../config/env.js'
 
-// 扩展Request接口以包含用户信息
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: string
-        email: string
-      }
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: {
+      id: string
+      email: string
     }
   }
 }
 
-// JWT密钥
+interface AuthTokenPayload extends JwtPayload {
+  userId: string
+  email: string
+}
+
+const isAuthTokenPayload = (payload: unknown): payload is AuthTokenPayload => {
+  if (typeof payload !== 'object' || payload === null) {
+    return false
+  }
+
+  const candidate = payload as Partial<AuthTokenPayload>
+  return typeof candidate.userId === 'string' && typeof candidate.email === 'string'
+}
+
 const JWT_SECRET = env.JWT_SECRET
 
 /**
@@ -28,7 +38,7 @@ export const authenticateToken = async (
 ): Promise<void> => {
   try {
     const authHeader = req.headers['authorization']
-    const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
+    const token = authHeader && authHeader.split(' ')[1]
 
     if (!token) {
       res.status(401).json({
@@ -38,25 +48,30 @@ export const authenticateToken = async (
       return
     }
 
-    // 验证JWT令牌
-    const decoded = jwt.verify(token, JWT_SECRET) as any
+    const decoded = jwt.verify(token, JWT_SECRET)
 
-    // 从数据库验证用户是否存在
-    const { data: user, error } = await supabase
+    if (!isAuthTokenPayload(decoded)) {
+      res.status(401).json({
+        success: false,
+        error: 'Invalid token payload',
+      })
+      return
+    }
+
+    const { data: user, error: userError } = await supabase
       .from('users')
       .select('id, email')
       .eq('id', decoded.userId)
       .single()
 
-    if (error || !user) {
+    if (userError || !user) {
       res.status(401).json({
         success: false,
-        error: 'Invalid token or user not found',
+        error: userError?.message || 'Invalid token or user not found',
       })
       return
     }
 
-    // 将用户信息添加到请求对象
     req.user = {
       id: user.id,
       email: user.email,
@@ -65,9 +80,10 @@ export const authenticateToken = async (
     next()
   } catch (error) {
     console.error('Auth middleware error:', error)
+    const message = error instanceof Error ? error.message : 'Invalid or expired token'
     res.status(403).json({
       success: false,
-      error: 'Invalid or expired token',
+      error: message,
     })
   }
 }
@@ -88,33 +104,41 @@ export const generateToken = (userId: string, email: string): string => {
  */
 export const optionalAuth = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction,
 ): Promise<void> => {
+  void _res
   try {
     const authHeader = req.headers['authorization']
     const token = authHeader && authHeader.split(' ')[1]
 
-    if (token) {
-      const decoded = jwt.verify(token, JWT_SECRET) as any
-
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('id, email')
-        .eq('id', decoded.userId)
-        .single()
-
-      if (!error && user) {
-        req.user = {
-          id: user.id,
-          email: user.email,
-        }
-      }
+    if (!token) {
+      next()
+      return
     }
 
-    next()
+    const decoded = jwt.verify(token, JWT_SECRET)
+
+    if (!isAuthTokenPayload(decoded)) {
+      next()
+      return
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, email')
+      .eq('id', decoded.userId)
+      .single()
+
+    if (!userError && user) {
+      req.user = {
+        id: user.id,
+        email: user.email,
+      }
+    }
   } catch (error) {
-    // 忽略认证错误，继续处理请求
-    next()
+    console.warn('Optional auth failed:', error)
   }
+
+  next()
 }

@@ -5,7 +5,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '../lib/auth-store'
-import { Brain, MessageCircle, Shield, Users, ArrowRight, CheckCircle } from 'lucide-react'
+import { Brain, MessageCircle, Shield, Users, ArrowRight } from 'lucide-react'
 
 const Home: React.FC = () => {
   const { isAuthenticated, user } = useAuthStore()

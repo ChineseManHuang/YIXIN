@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Play, Pause, Volume2, VolumeX, RotateCcw, Download } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -52,25 +52,32 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
   // 清理资源
   useEffect(() => {
     return () => {
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl)
-      }
       if (audioRef.current) {
         audioRef.current.pause()
         audioRef.current = null
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!audioUrl) {
+      return
+    }
+
+    return () => {
+      URL.revokeObjectURL(audioUrl)
+    }
+  }, [audioUrl])
   
   // 自动播放
   useEffect(() => {
     if (autoPlay && text) {
       handlePlay()
     }
-  }, [autoPlay, text])
+  }, [autoPlay, text, handlePlay])
   
   // 生成语音
-  const generateSpeech = async (): Promise<string> => {
+  const generateSpeech = useCallback(async (): Promise<string> => {
     try {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/voice/text-to-speech', {
@@ -91,19 +98,23 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
         const errorData = await response.json()
         throw new Error(errorData.error || '语音合成失败')
       }
-      
-      const audioBlob = await response.blob()
-      const url = URL.createObjectURL(audioBlob)
-      
+      const url = URL.createObjectURL(await response.blob())
+
       return url
-    } catch (error: any) {
-      console.error('Speech generation error:', error)
-      throw error
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : 'Audio playback failed'
+      setError(errorMsg)
+      setPlaybackState(prev => ({
+        ...prev,
+        isPlaying: false,
+        isLoading: false
+      }))
+      onError?.(errorMsg)
+      toast.error(errorMsg)
     }
-  }
-  
+  }, [text, voice, speed, language, onError])
   // 播放语音
-  const handlePlay = async () => {
+  const handlePlay = useCallback(async () => {
     if (!text.trim()) {
       toast.error('没有可播放的文本内容')
       return
@@ -115,7 +126,8 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
       
       // 如果已有音频URL，直接播放
       if (audioUrl && audioRef.current) {
-        audioRef.current.play()
+        await audioRef.current.play()
+        setPlaybackState(prev => ({ ...prev, isLoading: false }))
         return
       }
       
@@ -179,8 +191,8 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
       // 开始播放
       await audio.play()
       
-    } catch (error: any) {
-      const errorMsg = error.message || '语音生成失败'
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : 'Audio playback failed'
       setError(errorMsg)
       setPlaybackState(prev => ({
         ...prev,
@@ -190,8 +202,16 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
       onError?.(errorMsg)
       toast.error(errorMsg)
     }
-  }
-  
+  }, [
+    text,
+    audioUrl,
+    playbackState.isMuted,
+    playbackState.volume,
+    onPlayStart,
+    onPlayEnd,
+    onError,
+    generateSpeech
+  ])
   // 暂停播放
   const handlePause = () => {
     if (audioRef.current) {

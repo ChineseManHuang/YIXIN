@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../lib/auth-store'
-import { Brain, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react'
+import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react'
 
 const Register: React.FC = () => {
   const navigate = useNavigate()
@@ -34,7 +34,7 @@ const Register: React.FC = () => {
     return () => {
       clearError()
     }
-  }, [])
+  }, [clearError])
 
   // 密码强度检查
   const getPasswordStrength = (password: string) => {

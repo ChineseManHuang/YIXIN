@@ -1,7 +1,6 @@
 import axios, { AxiosInstance } from 'axios'
 import { env } from '../config/env.js'
 import FormData from 'form-data'
-import { Readable } from 'stream'
 
 // 语音处理相关接口
 export interface VoiceToTextRequest {
@@ -114,7 +113,7 @@ export class VoiceService {
         confidence: result.confidence || 0.9,
         duration: result.duration || 0
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[VoiceService] Voice to text error:', error)
       return {
         success: false,
@@ -156,7 +155,7 @@ export class VoiceService {
         audioBuffer,
         duration: this.estimateAudioDuration(request.text)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[VoiceService] Text to voice error:', error)
       return {
         success: false,
@@ -178,7 +177,7 @@ export class VoiceService {
 
       const response = await this.client.get('/health')
       return response.status === 200
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('[VoiceService] Health check failed:', error)
       return false
     }

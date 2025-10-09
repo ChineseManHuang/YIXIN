@@ -2,51 +2,13 @@
  * 阿里云百炼API集成服务
  * 实现与qwen3-omni-flash模型的通信
  */
-import axios, { AxiosInstance, AxiosResponse } from 'axios'
-import { KBEngine, type KBStage } from './kb-engine'
+import axios, { AxiosInstance } from 'axios'
+import { KBEngine } from './kb-engine'
 import { env } from '../config/env.js'
-import { EthicsMonitor, type EthicsMonitorResult } from './ethics-monitor'
+import { EthicsMonitor } from './ethics-monitor'
 
 // 百炼API请求接口
-interface BailianRequest {
-  model: string
-  messages: Array<{
-    role: 'system' | 'user' | 'assistant'
-    content: string
-  }>
-  temperature?: number
-  max_tokens?: number
-  top_p?: number
-  stream?: boolean
-  tools?: Array<{
-    type: string
-    function: {
-      name: string
-      description: string
-      parameters: object
-    }
-  }>
-}
-
 // 百炼API响应接口
-interface BailianResponse {
-  output: {
-    choices: Array<{
-      finish_reason: string
-      message: {
-        role: string
-        content: string
-      }
-    }>
-  }
-  usage: {
-    input_tokens: number
-    output_tokens: number
-    total_tokens: number
-  }
-  request_id: string
-}
-
 // 心理咨询上下文接口
 interface CounselingContext {
   sessionId: string
@@ -65,6 +27,12 @@ interface CounselingContext {
   }>
   currentIssues?: string[]
   riskLevel?: 'low' | 'medium' | 'high' | 'critical'
+}
+
+interface UsageStats {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
 }
 
 // 伦理检查结果接口
@@ -134,7 +102,7 @@ class BailianService {
   async generateCounselingResponse(
     context: CounselingContext,
     userMessage: string
-  ): Promise<{ response: string; ethicsCheck: EthicsCheckResult; usage: any }> {
+  ): Promise<{ response: string; ethicsCheck: EthicsCheckResult; usage: UsageStats }> {
     // 如果没有配置API，返回模拟响应
     if (!this.client) {
       return this.getMockCounselingResponse(context, userMessage)
@@ -182,7 +150,7 @@ class BailianService {
       console.log('[百炼服务] API响应:', response.data)
       
       if (!response.data.output || !response.data.output.choices || response.data.output.choices.length === 0) {
-        throw new Error('百炼API返回空响应')
+        throw new Error('Bailian API returned empty response')
       }
 
       const aiResponse = response.data.output.choices[0].message.content
@@ -209,17 +177,17 @@ class BailianService {
   private getMockCounselingResponse(
     context: CounselingContext,
     userMessage: string
-  ): { response: string; ethicsCheck: EthicsCheckResult; usage: any } {
+  ): { response: string; ethicsCheck: EthicsCheckResult; usage: UsageStats } {
     const mockResponses = {
-      'KB-01': '我理解您现在的感受。能告诉我更多关于这个问题的具体情况吗？这样我能更好地帮助您。',
-      'KB-02': '感谢您的分享。让我们一起来分析一下这个问题的根源，这有助于我们找到合适的解决方案。',
-      'KB-03': '基于您刚才的描述，我建议我们可以尝试一些具体的应对策略。您觉得从哪个方面开始比较合适？',
-      'KB-04': '很好，我们已经制定了一些策略。现在让我们讨论如何在日常生活中实施这些方法。',
-      'KB-05': '您在这次咨询中表现得很好。让我们总结一下今天讨论的要点，并为您制定后续的行动计划。'
+      'KB-01': `我理解您现在的感受。能告诉我更多关于这个问题的具体情况吗？这样我能更好地帮助您。`,
+      'KB-02': `感谢您的分享。让我们一起来分析一下这个问题的根源，这有助于我们找到合适的解决方案。`,
+      'KB-03': `基于您刚才的描述，我建议我们可以尝试一些具体的应对策略。您觉得从哪个方面开始比较合适？`,
+      'KB-04': `很好，我们已经制定了一些策略。现在让我们讨论如何在日常生活中实施这些方法。`,
+      'KB-05': `您在这次咨询中表现得很好。让我们总结一下今天讨论的要点，并为您制定后续的行动计划。`
     }
     
     return {
-      response: mockResponses[context.kbStage] || '我理解您的情况，让我们继续深入探讨这个问题。',
+      response: mockResponses[context.kbStage] || `我理解您的情况，让我们继续深入探讨这个问题。`,
       ethicsCheck: {
         isEthical: true,
         riskLevel: 'low',
@@ -239,7 +207,7 @@ class BailianService {
    * 构建系统提示词
    */
   private buildSystemPrompt(context: CounselingContext): string {
-    const { kbStage, userProfile, sessionId } = context
+    const { kbStage, userProfile } = context
     const stageConfig = KBEngine.getStageConfig(kbStage)
     
     let systemPrompt = `你是一位专业的AI心理咨询师，正在为来访者提供心理健康支持。

@@ -1,20 +1,25 @@
-﻿// env keys renamed: SUPABASE_* -> SB_*, VITE_SUPABASE_* -> VITE_SB_*
+﻿// Supabase server-side clients
 import { createClient } from '@supabase/supabase-js'
-import { env } from './env.js'
 
-const supabaseUrl = env.SB_URL
-const supabaseServiceRoleKey = env.SB_SERVICE_ROLE_KEY
-const supabaseAnonKey = env.SB_ANON_KEY
+const requireEnv = (key: 'SB_URL' | 'SB_SERVICE_ROLE_KEY' | 'SB_ANON_KEY'): string => {
+  const rawValue = process.env[key]
+  if (!rawValue || rawValue.trim() === '') {
+    throw new Error('[supabase] Missing required environment variable: ' + key)
+  }
 
-if (!supabaseUrl || !supabaseServiceRoleKey) {
-  throw new Error('Missing SB_URL or SB_SERVICE_ROLE_KEY. Set them in server/Edge Function secrets.')
+  const normalized = rawValue.trim()
+  process.env[key] = normalized
+  return normalized
 }
 
-if (!supabaseAnonKey) {
-  throw new Error('Missing SB_ANON_KEY. Set it in server/Edge Function secrets when sharing anon client.')
-}
+requireEnv('SB_URL')
+requireEnv('SB_SERVICE_ROLE_KEY')
+const supabaseAnonKey = requireEnv('SB_ANON_KEY')
 
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+export type JsonRecord = Record<string, JsonValue>
+
+export const supabaseAdmin = createClient(process.env.SB_URL!, process.env.SB_SERVICE_ROLE_KEY!, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,
@@ -23,7 +28,7 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
 
 export const supabase = supabaseAdmin
 
-export const supabaseAnonClient = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabaseAnonClient = createClient(process.env.SB_URL!, supabaseAnonKey, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,
@@ -59,8 +64,8 @@ export interface UserProfile {
   age?: number
   gender?: string
   occupation?: string
-  emergency_contact?: Record<string, any>
-  preferences?: Record<string, any>
+  emergency_contact?: JsonRecord
+  preferences?: JsonRecord
   created_at: string
   updated_at: string
 }
@@ -71,7 +76,7 @@ export interface Session {
   title: string
   status: 'active' | 'completed' | 'paused'
   current_kb_step: number
-  session_data: Record<string, any>
+  session_data: JsonRecord
   created_at: string
   updated_at: string
   completed_at?: string | null
@@ -83,7 +88,7 @@ export interface Message {
   sender_type: 'user' | 'assistant' | 'system'
   content: string
   message_type: string
-  metadata: Record<string, any>
+  metadata: JsonRecord
   created_at: string
 }
 
@@ -92,8 +97,8 @@ export interface KBProgress {
   session_id: string
   user_id: string
   current_stage: 'KB-01' | 'KB-02' | 'KB-03' | 'KB-04' | 'KB-05'
-  stage_progress: Record<string, any>
-  completion_criteria: Record<string, any>
+  stage_progress: JsonRecord
+  completion_criteria: JsonRecord
   total_messages: number
   stage_messages: number
   completed_stages: string[]
@@ -111,7 +116,7 @@ export interface EthicsLog {
   concerns: string[]
   recommendations: string[]
   confidence_score: number
-  detected_patterns: Record<string, any>[]
+  detected_patterns: JsonRecord[]
   action_taken: 'monitored' | 'blocked' | 'alerted' | 'escalated'
   created_at: string
 }

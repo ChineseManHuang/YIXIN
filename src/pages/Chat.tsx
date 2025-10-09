@@ -9,12 +9,11 @@ import { api } from '../lib/api'
 import { useSocket, useTypingIndicator } from '../hooks/useSocket'
 import VoiceRecorder from '../components/VoiceRecorder'
 import VoicePlayer from '../components/VoicePlayer'
-import { 
-  Send, 
-  Mic, 
-  MicOff, 
-  Paperclip, 
-  MoreVertical, 
+import {
+  Send,
+  Mic,
+  Paperclip,
+  MoreVertical,
   ArrowLeft,
   Brain,
   User,
@@ -41,7 +40,7 @@ interface Session {
 const Chat: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const { isAuthenticated, user } = useAuthStore()
+  const { isAuthenticated } = useAuthStore()
   
   const [session, setSession] = useState<Session | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -49,9 +48,7 @@ const Chat: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isRecording, setIsRecording] = useState(false)
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false)
-  const [lastAiMessage, setLastAiMessage] = useState<string>('')
   
   // Socket.io 实时功能
   const {
@@ -59,8 +56,7 @@ const Chat: React.FC = () => {
     isConnecting,
     error: socketError,
     sendMessage: sendSocketMessage,
-    typingUsers,
-    socketClient
+    typingUsers
   } = useSocket({ sessionId, autoConnect: true })
   
   const { isTyping, startTyping, stopTyping } = useTypingIndicator(sessionId)
@@ -157,9 +153,7 @@ const Chat: React.FC = () => {
       if (response.success && response.data) {
         // 添加AI回复到消息列表
         const aiMessage = response.data.ai_message
-        const aiResponse = aiMessage.content || '抱歉，我现在无法回复。'
         setMessages(prev => [...prev, aiMessage])
-        setLastAiMessage(aiResponse)
         
         // 通过Socket.io发送AI回复通知
         if (isConnected) {
@@ -171,7 +165,7 @@ const Chat: React.FC = () => {
           })
         }
       } else {
-        throw new Error(response.error || '发送消息失败')
+        throw new Error(response.error || `发送消息失败`)
       }
     } catch (err) {
       console.error('发送消息失败:', err)

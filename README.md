@@ -19,6 +19,8 @@ cp .env.example .env
 - `JWT_SECRET`：自行生成的高强度随机字符串。
 - `BAILIAN_API_KEY`、`ALIBABA_VOICE_API_KEY` 等为可选外部服务凭据，仅在集成相关能力时配置。
 
+> 兼容性说明：部署时请统一使用 `SB_*` / `VITE_SB_*` 前缀，及时清理旧的 Supabase 变量命名（例如早期的 `SUPABASE_*`、`VITE_SUPABASE_*`），避免读写到两个不同的项目。
+
 > `.env` 文件已被加入 `.gitignore`，请勿将真实密钥提交到版本库。
 
 ## 本地开发

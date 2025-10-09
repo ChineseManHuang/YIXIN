@@ -1,7 +1,6 @@
-import { Server as SocketIOServer } from 'socket.io'
+﻿import { Server as SocketIOServer } from 'socket.io'
 import { Server as HTTPServer } from 'http'
 import { env } from '../config/env.js'
-import { supabase } from '../config/database.js'
 
 export interface SocketUser {
   id: string
@@ -47,8 +46,8 @@ export class SocketService {
     this.io.on('connection', (socket) => {
       console.log(`Socket connected: ${socket.id}`)
 
-      // 用户认证和加入
-      socket.on('join', async (data: { userId: string, sessionId?: string }) => {
+      // 鐢ㄦ埛璁よ瘉鍜屽姞鍏?
+      socket.on('join', async (data: { userId: string; sessionId?: string }) => {
         try {
           const user: SocketUser = {
             id: socket.id,
@@ -59,15 +58,15 @@ export class SocketService {
 
           this.connectedUsers.set(socket.id, user)
 
-          // 加入用户专属房间
+          // 鍔犲叆鐢ㄦ埛涓撳睘鎴块棿
           socket.join(`user:${data.userId}`)
           
-          // 如果有会话ID，加入会话房间
+          // 濡傛灉鏈変細璇滻D锛屽姞鍏ヤ細璇濇埧闂?
           if (data.sessionId) {
             socket.join(`session:${data.sessionId}`)
           }
 
-          // 通知用户连接成功
+          // 閫氱煡鐢ㄦ埛杩炴帴鎴愬姛
           socket.emit('joined', {
             success: true,
             userId: data.userId,
@@ -75,17 +74,17 @@ export class SocketService {
           })
 
           console.log(`User ${data.userId} joined session ${data.sessionId}`)
-        } catch (error) {
+        } catch (error: unknown) {
           console.error('Join error:', error)
-          socket.emit('error', { message: '加入失败' })
+          socket.emit('error', { message: '鍔犲叆澶辫触' })
         }
       })
 
-      // 处理输入状态
+      // 澶勭悊杈撳叆鐘舵€?
       socket.on('typing', (data: TypingData) => {
         const user = this.connectedUsers.get(socket.id)
         if (user && data.sessionId) {
-          // 向同一会话的其他用户广播输入状态
+          // 鍚戝悓涓€浼氳瘽鐨勫叾浠栫敤鎴峰箍鎾緭鍏ョ姸鎬?
           socket.to(`session:${data.sessionId}`).emit('user_typing', {
             userId: data.userId,
             isTyping: data.isTyping,
@@ -94,20 +93,20 @@ export class SocketService {
         }
       })
 
-      // 处理新消息广播
+      // 澶勭悊鏂版秷鎭箍鎾?
       socket.on('new_message', (data: MessageData) => {
         const user = this.connectedUsers.get(socket.id)
         if (user && data.sessionId) {
-          // 向同一会话的其他用户广播新消息
+          // 鍚戝悓涓€浼氳瘽鐨勫叾浠栫敤鎴峰箍鎾柊娑堟伅
           socket.to(`session:${data.sessionId}`).emit('message_received', data)
         }
       })
 
-      // 处理会话状态更新
+      // 澶勭悊浼氳瘽鐘舵€佹洿鏂?
       socket.on('session_update', (data: { sessionId: string, status: string }) => {
         const user = this.connectedUsers.get(socket.id)
         if (user) {
-          // 向同一会话的其他用户广播会话状态更新
+          // 鍚戝悓涓€浼氳瘽鐨勫叾浠栫敤鎴峰箍鎾細璇濈姸鎬佹洿鏂?
           socket.to(`session:${data.sessionId}`).emit('session_status_changed', {
             sessionId: data.sessionId,
             status: data.status,
@@ -116,13 +115,13 @@ export class SocketService {
         }
       })
 
-      // 处理断线
+      // 澶勭悊鏂嚎
       socket.on('disconnect', () => {
         const user = this.connectedUsers.get(socket.id)
         if (user) {
           console.log(`User ${user.userId} disconnected`)
           
-          // 通知同一会话的其他用户
+          // 閫氱煡鍚屼竴浼氳瘽鐨勫叾浠栫敤鎴?
           if (user.sessionId) {
             socket.to(`session:${user.sessionId}`).emit('user_disconnected', {
               userId: user.userId,
@@ -134,40 +133,40 @@ export class SocketService {
         }
       })
 
-      // 处理错误
-      socket.on('error', (error) => {
+      // 澶勭悊閿欒
+      socket.on('error', (error: unknown) => {
         console.error('Socket error:', error)
       })
     })
   }
 
-  // 向特定用户发送消息
-  public sendToUser(userId: string, event: string, data: any) {
+  // 鍚戠壒瀹氱敤鎴峰彂閫佹秷鎭?
+  public sendToUser(userId: string, event: string, data: unknown) {
     this.io.to(`user:${userId}`).emit(event, data)
   }
 
-  // 向特定会话发送消息
-  public sendToSession(sessionId: string, event: string, data: any) {
+  // 鍚戠壒瀹氫細璇濆彂閫佹秷鎭?
+  public sendToSession(sessionId: string, event: string, data: unknown) {
     this.io.to(`session:${sessionId}`).emit(event, data)
   }
 
-  // 广播给所有连接的用户
-  public broadcast(event: string, data: any) {
+  // 骞挎挱缁欐墍鏈夎繛鎺ョ殑鐢ㄦ埛
+  public broadcast(event: string, data: unknown) {
     this.io.emit(event, data)
   }
 
-  // 获取连接的用户数量
+  // 鑾峰彇杩炴帴鐨勭敤鎴锋暟閲?
   public getConnectedUsersCount(): number {
     return this.connectedUsers.size
   }
 
-  // 获取特定会话的连接用户
+  // 鑾峰彇鐗瑰畾浼氳瘽鐨勮繛鎺ョ敤鎴?
   public getSessionUsers(sessionId: string): SocketUser[] {
     return Array.from(this.connectedUsers.values())
       .filter(user => user.sessionId === sessionId)
   }
 
-  // 记录连接统计到数据库
+  // 璁板綍杩炴帴缁熻鍒版暟鎹簱
   public async logConnectionStats() {
     try {
       const stats = {
@@ -175,15 +174,15 @@ export class SocketService {
         timestamp: new Date().toISOString()
       }
 
-      // 这里可以添加到数据库记录连接统计
+      // 杩欓噷鍙互娣诲姞鍒版暟鎹簱璁板綍杩炴帴缁熻
       console.log('Connection stats:', stats)
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to log connection stats:', error)
     }
   }
 }
 
-// 导出单例实例
+// 瀵煎嚭鍗曚緥瀹炰緥
 let socketService: SocketService | null = null
 
 export const initializeSocket = (server: HTTPServer): SocketService => {

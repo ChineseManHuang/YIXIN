@@ -64,7 +64,7 @@ const Resources: React.FC = () => {
   const [resources, setResources] = useState<Resource[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [error] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedType, setSelectedType] = useState<string>('all')
@@ -239,7 +239,7 @@ const Resources: React.FC = () => {
 
   // 过滤和排序资源
   const filteredAndSortedResources = React.useMemo(() => {
-    let filtered = resources.filter(resource => {
+    const filtered = resources.filter(resource => {
       const matchesSearch = resource.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            resource.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            resource.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -492,7 +492,7 @@ const Resources: React.FC = () => {
               
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
+                onChange={(e) => setSortBy(e.target.value as 'newest' | 'popular' | 'rating')}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="newest">最新发布</option>

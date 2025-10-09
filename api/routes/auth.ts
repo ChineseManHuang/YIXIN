@@ -12,23 +12,27 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 
   try {
     const { email, password, full_name } = (req.body ?? {}) as {
-      email?: string
-      password?: string
-      full_name?: string
+      email?: unknown
+      password?: unknown
+      full_name?: unknown
     }
 
-    if (!email || !password) {
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
+    const normalizedPassword = typeof password === 'string' ? password : ''
+    const sanitizedFullName = typeof full_name === 'string' ? full_name.trim() : undefined
+
+    if (!normalizedEmail || !normalizedPassword) {
       res.status(400).json({ success: false, error: 'Email and password are required' })
       return
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       res.status(400).json({ success: false, error: 'Invalid email format' })
       return
     }
 
-    if (password.length < 6) {
+    if (normalizedPassword.length < 6) {
       res.status(400).json({ success: false, error: 'Password must be at least 6 characters long' })
       return
     }
@@ -36,7 +40,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const { data: existingUser, error: existingUserError } = await supabase
       .from('users')
       .select('id')
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .maybeSingle()
 
     if (existingUserError) {
@@ -51,28 +55,34 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     }
 
     const { data: createdUser, error: createUserError } = await supabase.auth.admin.createUser({
-      email,
-      password,
+      email: normalizedEmail,
+      password: normalizedPassword,
       email_confirm: true,
     })
 
     if (createUserError || !createdUser?.user) {
       console.error('Supabase auth create user error:', createUserError)
       const isDuplicate = createUserError?.status === 422
-      res.status(isDuplicate ? 409 : 500).json(
+      const isUnauthorized = createUserError?.status === 401 || createUserError?.code === 'PGRST301'
+      const status = isDuplicate ? 409 : isUnauthorized ? 500 : 500
+      const message = isUnauthorized
+        ? 'Supabase admin access denied. Verify SB_URL and SB_SERVICE_ROLE_KEY.'
+        : createUserError?.message || 'Failed to create user'
+
+      res.status(status).json(
         isDuplicate
           ? conflictResponse
-          : { success: false, error: createUserError?.message || 'Failed to create user' }
+          : { success: false, error: message }
       )
       return
     }
 
     const newUserId = createdUser.user.id
 
-    if (full_name) {
+    if (sanitizedFullName) {
       const { error: profileError } = await supabase
         .from('user_profiles')
-        .insert({ user_id: newUserId, full_name })
+        .insert({ user_id: newUserId, full_name: sanitizedFullName })
 
       if (profileError) {
         console.error('User profile creation error:', profileError)
@@ -98,12 +108,12 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const finalUser = dbUser ?? (adminUser?.user
       ? {
           id: adminUser.user.id,
-          email: adminUser.user.email ?? email,
+          email: adminUser.user.email ?? normalizedEmail,
           created_at: adminUser.user.created_at ?? fallbackCreatedAt,
         }
       : {
           id: newUserId,
-          email,
+          email: normalizedEmail,
           created_at: fallbackCreatedAt,
         })
 
@@ -249,9 +259,10 @@ router.get('/debug/supabase', async (_req: Request, res: Response): Promise<void
     }
 
     res.json({ success: true, data: data ?? [] })
-  } catch (e: any) {
-    console.error('Supabase debug runtime error:', e)
-    res.status(500).json({ success: false, error: e?.message || 'Debug failed' })
+  } catch (error: unknown) {
+    console.error('Supabase debug runtime error:', error)
+    const message = error instanceof Error ? error.message : 'Debug failed'
+    res.status(500).json({ success: false, error: message })
   }
 })
 
@@ -271,9 +282,10 @@ router.post('/debug/insert', async (_req: Request, res: Response): Promise<void>
     }
 
     res.status(201).json({ success: true, data })
-  } catch (e: any) {
-    console.error('Supabase debug insert runtime error:', e)
-    res.status(500).json({ success: false, error: e?.message || 'Debug insert failed' })
+  } catch (error: unknown) {
+    console.error('Supabase debug insert runtime error:', error)
+    const message = error instanceof Error ? error.message : 'Debug insert failed'
+    res.status(500).json({ success: false, error: message })
   }
 })
 

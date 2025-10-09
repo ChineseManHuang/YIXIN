@@ -2,19 +2,17 @@
  * AI咨询页面组件
  * 实现与AI心理咨询师的对话界面
  */
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuthStore } from '../lib/auth-store'
 import { api } from '../lib/api'
 import { Send, Mic, MicOff, Volume2, VolumeX, ArrowLeft, MoreVertical } from 'lucide-react'
 import type { Message, Session } from '../lib/api'
 
-interface ConsultationPageProps {}
-
-const Consultation: React.FC<ConsultationPageProps> = () => {
+const Consultation: React.FC = () => {
   const navigate = useNavigate()
   const { sessionId } = useParams<{ sessionId: string }>()
-  const { isAuthenticated, user } = useAuthStore()
+  const { isAuthenticated } = useAuthStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
   // 状态管理
@@ -38,20 +36,8 @@ const Consultation: React.FC<ConsultationPageProps> = () => {
     }
   }, [isAuthenticated, navigate])
   
-  // 加载会话数据
-  useEffect(() => {
-    if (sessionId && isAuthenticated) {
-      loadSession()
-    }
-  }, [sessionId, isAuthenticated])
-  
-  // 自动滚动到底部
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-  
   // 加载会话信息和消息
-  const loadSession = async () => {
+  const loadSession = useCallback(async () => {
     try {
       setIsLoading(true)
       const response = await api.sessions.get(sessionId!)
@@ -65,7 +51,19 @@ const Consultation: React.FC<ConsultationPageProps> = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [sessionId])
+
+  // 加载会话数据
+  useEffect(() => {
+    if (sessionId && isAuthenticated) {
+      loadSession()
+    }
+  }, [sessionId, isAuthenticated, loadSession])
+  
+  // 自动滚动到底部
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
   
   // 滚动到底部
   const scrollToBottom = () => {
@@ -73,7 +71,7 @@ const Consultation: React.FC<ConsultationPageProps> = () => {
   }
   
   // 发送消息
-  const sendMessage = async (content: string, messageType: 'text' | 'audio' = 'text') => {
+  const sendMessage = useCallback(async (content: string, messageType: 'text' | 'audio' = 'text') => {
     if (!content.trim() || !sessionId || isLoading) return
     
     try {
@@ -96,7 +94,7 @@ const Consultation: React.FC<ConsultationPageProps> = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [sessionId, isLoading])
   
   // 处理文本消息发送
   const handleSendMessage = (e: React.FormEvent) => {
@@ -142,13 +140,12 @@ const Consultation: React.FC<ConsultationPageProps> = () => {
   // 处理录音完成
   useEffect(() => {
     if (audioChunks.length > 0 && !isRecording) {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' })
       // 这里应该将音频转换为文本，然后发送消息
       // 暂时使用占位符文本
       sendMessage('[语音消息]', 'audio')
       setAudioChunks([])
     }
-  }, [audioChunks, isRecording])
+  }, [audioChunks, isRecording, sendMessage])
   
   // 语音播放
   const speakMessage = (text: string) => {

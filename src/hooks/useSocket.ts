@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { socketClient, SocketEvents, MessageData, TypingData } from '../services/socket'
+import { socketClient, MessageData } from '../services/socket'
 import { useAuthStore } from "../lib/auth-store";
 
 export interface UseSocketOptions {
@@ -274,28 +274,6 @@ export const useTypingIndicator = (sessionId?: string) => {
   const [isTyping, setIsTyping] = useState(false)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  const startTyping = useCallback(() => {
-    if (!user?.id || !sessionId) return
-
-    if (!isTyping) {
-      setIsTyping(true)
-      socketClient.sendTyping({
-        userId: user.id,
-        sessionId,
-        isTyping: true
-      })
-    }
-
-    // 重置定时器
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current)
-    }
-
-    typingTimeoutRef.current = setTimeout(() => {
-      stopTyping()
-    }, 1000)
-  }, [user?.id, sessionId, isTyping])
-
   const stopTyping = useCallback(() => {
     if (!user?.id || !sessionId) return
 
@@ -313,6 +291,27 @@ export const useTypingIndicator = (sessionId?: string) => {
       typingTimeoutRef.current = null
     }
   }, [user?.id, sessionId, isTyping])
+
+  const startTyping = useCallback(() => {
+    if (!user?.id || !sessionId) return
+
+    if (!isTyping) {
+      setIsTyping(true)
+      socketClient.sendTyping({
+        userId: user.id,
+        sessionId,
+        isTyping: true
+      })
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      stopTyping()
+    }, 1000)
+  }, [user?.id, sessionId, isTyping, stopTyping])
 
   useEffect(() => {
     return () => {

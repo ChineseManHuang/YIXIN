@@ -24,12 +24,8 @@ import {
   Settings,
   Grid,
   ExternalLink,
-  Download,
-  Video,
   FileText,
-  Headphones,
   Shield,
-  Heart,
   Zap,
   Users,
   Eye

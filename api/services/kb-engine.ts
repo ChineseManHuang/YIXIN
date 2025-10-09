@@ -1,4 +1,4 @@
-import { supabase } from '../config/database'
+ï»¿import { supabase } from '../config/database'
 import type { KBProgress } from '../config/database'
 
 export type KBStage = 'KB-01' | 'KB-02' | 'KB-03' | 'KB-04' | 'KB-05'
@@ -27,131 +27,131 @@ export interface KBProgressAssessment {
 const KB_STAGES: Record<KBStage, KBStageConfig> = {
   'KB-01': {
     stage: 'KB-01',
-    name: '½¨Á¢¹ØÏµºÍÊÕ¼¯»ù±¾ÐÅÏ¢',
-    description: 'ÓëÀ´·ÃÕß½¨Á¢ÐÅÈÎ¹ØÏµ£¬ÊÕ¼¯»ù±¾¸öÈËÐÅÏ¢ºÍÖ÷ÒªÀ§ÈÅ',
+    name: 'å»ºç«‹å…³ç³»å’Œæ”¶é›†åŸºæœ¬ä¿¡æ¯',
+    description: 'ä¸Žæ¥è®¿è€…å»ºç«‹ä¿¡ä»»å…³ç³»ï¼Œæ”¶é›†åŸºæœ¬ä¸ªäººä¿¡æ¯å’Œä¸»è¦å›°æ‰°',
     objectives: [
-      '½¨Á¢°²È«¡¢ÐÅÈÎµÄ×ÉÑ¯¹ØÏµ',
-      'ÁË½âÀ´·ÃÕß»ù±¾Çé¿ö',
-      'Ê¶±ðÖ÷ÒªÎÊÌâºÍÀ§ÈÅ',
-      'ÆÀ¹ÀÀ´·ÃÕßµÄ¶¯»úºÍÆÚ´ý',
+      'å»ºç«‹å®‰å…¨ã€ä¿¡ä»»çš„å’¨è¯¢å…³ç³»',
+      'äº†è§£æ¥è®¿è€…åŸºæœ¬æƒ…å†µ',
+      'è¯†åˆ«ä¸»è¦é—®é¢˜å’Œå›°æ‰°',
+      'è¯„ä¼°æ¥è®¿è€…çš„åŠ¨æœºå’ŒæœŸå¾…',
     ],
     keyQuestions: [
-      'Äú½ñÌìÀ´×ÉÑ¯Ï£Íû½â¾öÊ²Ã´ÎÊÌâ£¿',
-      'Õâ¸öÎÊÌâÀ§ÈÅÄú¶à³¤Ê±¼äÁË£¿',
-      'ÄúÖ®Ç°ÊÇ·ñÑ°Çó¹ý°ïÖú£¿',
-      'ÄúÏ£ÍûÍ¨¹ý×ÉÑ¯´ïµ½Ê²Ã´Ä¿±ê£¿',
+      'æ‚¨ä»Šå¤©æ¥å’¨è¯¢å¸Œæœ›è§£å†³ä»€ä¹ˆé—®é¢˜ï¼Ÿ',
+      'è¿™ä¸ªé—®é¢˜å›°æ‰°æ‚¨å¤šé•¿æ—¶é—´äº†ï¼Ÿ',
+      'æ‚¨ä¹‹å‰æ˜¯å¦å¯»æ±‚è¿‡å¸®åŠ©ï¼Ÿ',
+      'æ‚¨å¸Œæœ›é€šè¿‡å’¨è¯¢è¾¾åˆ°ä»€ä¹ˆç›®æ ‡ï¼Ÿ',
     ],
     expectedDuration: 15,
     minMessages: 6,
     completionCriteria: [
-      'À´·ÃÕß±í´ïÁËÖ÷ÒªÀ§ÈÅ',
-      '½¨Á¢ÁË»ù±¾µÄÐÅÈÎ¹ØÏµ',
-      'ÊÕ¼¯ÁË»ù±¾¸öÈËÐÅÏ¢',
-      'Ã÷È·ÁË×ÉÑ¯Ä¿±ê',
+      'æ¥è®¿è€…è¡¨è¾¾äº†ä¸»è¦å›°æ‰°',
+      'å»ºç«‹äº†åŸºæœ¬çš„ä¿¡ä»»å…³ç³»',
+      'æ”¶é›†äº†åŸºæœ¬ä¸ªäººä¿¡æ¯',
+      'æ˜Žç¡®äº†å’¨è¯¢ç›®æ ‡',
     ],
     nextStage: 'KB-02',
   },
   'KB-02': {
     stage: 'KB-02',
-    name: 'ÉîÈëÌ½Ë÷ÎÊÌâ',
-    description: 'ÉîÈëÁË½âÎÊÌâµÄ¾ßÌå±íÏÖ¡¢Ó°ÏìÒòËØºÍ±³¾°',
+    name: 'æ·±å…¥æŽ¢ç´¢é—®é¢˜',
+    description: 'æ·±å…¥äº†è§£é—®é¢˜çš„å…·ä½“è¡¨çŽ°ã€å½±å“å› ç´ å’ŒèƒŒæ™¯',
     objectives: [
-      'ÉîÈëÁË½âÎÊÌâµÄ¾ßÌå±íÏÖ',
-      'Ì½Ë÷ÎÊÌâµÄ·¢Éú±³¾°ºÍÓÕÒò',
-      'ÁË½âÎÊÌâ¶ÔÉú»îµÄÓ°Ïì',
-      'Ê¶±ðÏà¹ØµÄÇéÐ÷ºÍÈÏÖªÄ£Ê½',
+      'æ·±å…¥äº†è§£é—®é¢˜çš„å…·ä½“è¡¨çŽ°',
+      'æŽ¢ç´¢é—®é¢˜çš„å‘ç”ŸèƒŒæ™¯å’Œè¯±å› ',
+      'äº†è§£é—®é¢˜å¯¹ç”Ÿæ´»çš„å½±å“',
+      'è¯†åˆ«ç›¸å…³çš„æƒ…ç»ªå’Œè®¤çŸ¥æ¨¡å¼',
     ],
     keyQuestions: [
-      'ÄÜ¾ßÌåÃèÊöÒ»ÏÂÕâ¸öÎÊÌâÊÇÈçºÎ±íÏÖµÄÂð£¿',
-      'Ê²Ã´Çé¿öÏÂÎÊÌâ»á¼ÓÖØ»ò¼õÇá£¿',
-      'Õâ¸öÎÊÌâ¶ÔÄúµÄÉú»îÔì³ÉÁËÄÄÐ©Ó°Ïì£¿',
-      'ÄúÊÇÈçºÎÀí½âÕâ¸öÎÊÌâµÄ£¿',
+      'èƒ½å…·ä½“æè¿°ä¸€ä¸‹è¿™ä¸ªé—®é¢˜æ˜¯å¦‚ä½•è¡¨çŽ°çš„å—ï¼Ÿ',
+      'ä»€ä¹ˆæƒ…å†µä¸‹é—®é¢˜ä¼šåŠ é‡æˆ–å‡è½»ï¼Ÿ',
+      'è¿™ä¸ªé—®é¢˜å¯¹æ‚¨çš„ç”Ÿæ´»é€ æˆäº†å“ªäº›å½±å“ï¼Ÿ',
+      'æ‚¨æ˜¯å¦‚ä½•ç†è§£è¿™ä¸ªé—®é¢˜çš„ï¼Ÿ',
     ],
     expectedDuration: 20,
     minMessages: 8,
     completionCriteria: [
-      'ÎÊÌâ±íÏÖµÃµ½ÏêÏ¸ÃèÊö',
-      'Ê¶±ðÁËÓ°ÏìÒòËØ',
-      'ÁË½âÁËÎÊÌâµÄÓ°Ïì·¶Î§',
-      'Ì½Ë÷ÁËÏà¹ØµÄÇéÐ÷ºÍÈÏÖª',
+      'é—®é¢˜è¡¨çŽ°å¾—åˆ°è¯¦ç»†æè¿°',
+      'è¯†åˆ«äº†å½±å“å› ç´ ',
+      'äº†è§£äº†é—®é¢˜çš„å½±å“èŒƒå›´',
+      'æŽ¢ç´¢äº†ç›¸å…³çš„æƒ…ç»ªå’Œè®¤çŸ¥',
     ],
     nextStage: 'KB-03',
   },
   'KB-03': {
     stage: 'KB-03',
-    name: '·ÖÎöºÍÀí½â',
-    description: '·ÖÎöÎÊÌâµÄ¸ùÔ´£¬°ïÖúÀ´·ÃÕß»ñµÃÐÂµÄÀí½âºÍ¶´²ì',
+    name: 'åˆ†æžå’Œç†è§£',
+    description: 'åˆ†æžé—®é¢˜çš„æ ¹æºï¼Œå¸®åŠ©æ¥è®¿è€…èŽ·å¾—æ–°çš„ç†è§£å’Œæ´žå¯Ÿ',
     objectives: [
-      '·ÖÎöÎÊÌâµÄÉî²ãÔ­Òò',
-      '°ïÖúÀ´·ÃÕß»ñµÃÐÂµÄÀí½â',
-      'Ê¶±ð²»ºÏÀíµÄÈÏÖªºÍÐÐÎªÄ£Ê½',
-      'Ì½Ë÷¸öÈË×ÊÔ´ºÍÓÅÊÆ',
+      'åˆ†æžé—®é¢˜çš„æ·±å±‚åŽŸå› ',
+      'å¸®åŠ©æ¥è®¿è€…èŽ·å¾—æ–°çš„ç†è§£',
+      'è¯†åˆ«ä¸åˆç†çš„è®¤çŸ¥å’Œè¡Œä¸ºæ¨¡å¼',
+      'æŽ¢ç´¢ä¸ªäººèµ„æºå’Œä¼˜åŠ¿',
     ],
     keyQuestions: [
-      'Äú¾õµÃÕâ¸öÎÊÌâ¿ÉÄÜµÄÔ­ÒòÊÇÊ²Ã´£¿',
-      'ÔÚÀàËÆÇé¿öÏÂ£¬ÄúÍ¨³£ÊÇÈçºÎË¼¿¼µÄ£¿',
-      'ÄúÓÐÄÄÐ©Ó¦¶ÔÕâÀàÎÊÌâµÄ¾­Ñé£¿',
-      'ÄúÈÏÎªÊ²Ã´ÒòËØ¿ÉÄÜÓÐÖúÓÚ¸ÄÉÆÏÖ×´£¿',
+      'æ‚¨è§‰å¾—è¿™ä¸ªé—®é¢˜å¯èƒ½çš„åŽŸå› æ˜¯ä»€ä¹ˆï¼Ÿ',
+      'åœ¨ç±»ä¼¼æƒ…å†µä¸‹ï¼Œæ‚¨é€šå¸¸æ˜¯å¦‚ä½•æ€è€ƒçš„ï¼Ÿ',
+      'æ‚¨æœ‰å“ªäº›åº”å¯¹è¿™ç±»é—®é¢˜çš„ç»éªŒï¼Ÿ',
+      'æ‚¨è®¤ä¸ºä»€ä¹ˆå› ç´ å¯èƒ½æœ‰åŠ©äºŽæ”¹å–„çŽ°çŠ¶ï¼Ÿ',
     ],
     expectedDuration: 25,
     minMessages: 10,
     completionCriteria: [
-      'Ê¶±ðÁËÎÊÌâµÄÉî²ãÔ­Òò',
-      'À´·ÃÕß»ñµÃÁËÐÂµÄÀí½â',
-      '·¢ÏÖÁË²»ºÏÀíµÄÈÏÖªÄ£Ê½',
-      'Ê¶±ðÁË¸öÈË×ÊÔ´ºÍÓÅÊÆ',
+      'è¯†åˆ«äº†é—®é¢˜çš„æ·±å±‚åŽŸå› ',
+      'æ¥è®¿è€…èŽ·å¾—äº†æ–°çš„ç†è§£',
+      'å‘çŽ°äº†ä¸åˆç†çš„è®¤çŸ¥æ¨¡å¼',
+      'è¯†åˆ«äº†ä¸ªäººèµ„æºå’Œä¼˜åŠ¿',
     ],
     nextStage: 'KB-04',
   },
   'KB-04': {
     stage: 'KB-04',
-    name: 'ÖÆ¶¨½â¾ö·½°¸',
-    description: 'ÓëÀ´·ÃÕß¹²Í¬ÖÆ¶¨¾ßÌåµÄ½â¾ö·½°¸ºÍÐÐ¶¯¼Æ»®',
+    name: 'åˆ¶å®šè§£å†³æ–¹æ¡ˆ',
+    description: 'ä¸Žæ¥è®¿è€…å…±åŒåˆ¶å®šå…·ä½“çš„è§£å†³æ–¹æ¡ˆå’Œè¡ŒåŠ¨è®¡åˆ’',
     objectives: [
-      'ÖÆ¶¨¾ßÌåµÄ½â¾ö²ßÂÔ',
-      'Éè¶¨¿ÉÊµÏÖµÄÄ¿±ê',
-      'ÖÆ¶¨ÐÐ¶¯¼Æ»®',
-      'Ô¤ÆÚ¿ÉÄÜµÄÀ§ÄÑºÍÓ¦¶Ô·½·¨',
+      'åˆ¶å®šå…·ä½“çš„è§£å†³ç­–ç•¥',
+      'è®¾å®šå¯å®žçŽ°çš„ç›®æ ‡',
+      'åˆ¶å®šè¡ŒåŠ¨è®¡åˆ’',
+      'é¢„æœŸå¯èƒ½çš„å›°éš¾å’Œåº”å¯¹æ–¹æ³•',
     ],
     keyQuestions: [
-      '»ùÓÚÎÒÃÇµÄÌÖÂÛ£¬Äú¾õµÃ¿ÉÒÔ³¢ÊÔÄÄÐ©·½·¨£¿',
-      'ÄúÏ£ÍûÏÈ´ÓÄÄ¸ö·½Ãæ¿ªÊ¼¸Ä±ä£¿',
-      'Äú¾õµÃÊ²Ã´ÑùµÄÄ¿±êÊÇÏÖÊµ¿ÉÐÐµÄ£¿',
-      'ÔÚÊµÊ©¹ý³ÌÖÐ¿ÉÄÜÓöµ½ÄÄÐ©À§ÄÑ£¿',
+      'åŸºäºŽæˆ‘ä»¬çš„è®¨è®ºï¼Œæ‚¨è§‰å¾—å¯ä»¥å°è¯•å“ªäº›æ–¹æ³•ï¼Ÿ',
+      'æ‚¨å¸Œæœ›å…ˆä»Žå“ªä¸ªæ–¹é¢å¼€å§‹æ”¹å˜ï¼Ÿ',
+      'æ‚¨è§‰å¾—ä»€ä¹ˆæ ·çš„ç›®æ ‡æ˜¯çŽ°å®žå¯è¡Œçš„ï¼Ÿ',
+      'åœ¨å®žæ–½è¿‡ç¨‹ä¸­å¯èƒ½é‡åˆ°å“ªäº›å›°éš¾ï¼Ÿ',
     ],
     expectedDuration: 20,
     minMessages: 8,
     completionCriteria: [
-      'ÖÆ¶¨ÁË¾ßÌåµÄ½â¾ö²ßÂÔ',
-      'Éè¶¨ÁË¿ÉÊµÏÖµÄÄ¿±ê',
-      'ÖÆ¶¨ÁËÏêÏ¸µÄÐÐ¶¯¼Æ»®',
-      'Ô¤ÆÚÁË¿ÉÄÜµÄÀ§ÄÑ',
+      'åˆ¶å®šäº†å…·ä½“çš„è§£å†³ç­–ç•¥',
+      'è®¾å®šäº†å¯å®žçŽ°çš„ç›®æ ‡',
+      'åˆ¶å®šäº†è¯¦ç»†çš„è¡ŒåŠ¨è®¡åˆ’',
+      'é¢„æœŸäº†å¯èƒ½çš„å›°éš¾',
     ],
     nextStage: 'KB-05',
   },
   'KB-05': {
     stage: 'KB-05',
-    name: '×Ü½áºÍ¹®¹Ì',
-    description: '»Ø¹Ë×ÉÑ¯³É¹û£¬¹®¹Ì»ý¼«±ä»¯²¢¹æ»®ºóÐøÖ§³Ö',
+    name: 'æ€»ç»“å’Œå·©å›º',
+    description: 'å›žé¡¾å’¨è¯¢æˆæžœï¼Œå·©å›ºç§¯æžå˜åŒ–å¹¶è§„åˆ’åŽç»­æ”¯æŒ',
     objectives: [
-      '»Ø¹Ë×ÉÑ¯¹ý³ÌÖÐµÄÊÕ»ñ',
-      '¹®¹ÌÐÂµÄÈÏÖªºÍÐÐÎªÄ£Ê½',
-      'ÖÆ¶¨Î¬³ÖÓë¹®¹Ì¼Æ»®',
-      '¹æ»®ºóÐøÖ§³Ö×ÊÔ´',
+      'å›žé¡¾å’¨è¯¢è¿‡ç¨‹ä¸­çš„æ”¶èŽ·',
+      'å·©å›ºæ–°çš„è®¤çŸ¥å’Œè¡Œä¸ºæ¨¡å¼',
+      'åˆ¶å®šç»´æŒä¸Žå·©å›ºè®¡åˆ’',
+      'è§„åˆ’åŽç»­æ”¯æŒèµ„æº',
     ],
     keyQuestions: [
-      'Í¨¹ýÕâ¶Î×ÉÑ¯£¬ÄúÓÐÄÄÐ©ÐÂµÄÊÕ»ñ£¿',
-      'ÓÐÄÄÐ©·½·¨¶ÔÄú×îÓÐ°ïÖú£¿',
-      'ÎªÁË¹®¹ÌÕâÐ©±ä»¯£¬Äú½ÓÏÂÀ´¿ÉÒÔ×öÊ²Ã´£¿',
-      'µ±Óöµ½À§ÄÑÊ±£¬Äú»áÑ°ÇóÄÄÐ©Ö§³Ö£¿',
+      'é€šè¿‡è¿™æ®µå’¨è¯¢ï¼Œæ‚¨æœ‰å“ªäº›æ–°çš„æ”¶èŽ·ï¼Ÿ',
+      'æœ‰å“ªäº›æ–¹æ³•å¯¹æ‚¨æœ€æœ‰å¸®åŠ©ï¼Ÿ',
+      'ä¸ºäº†å·©å›ºè¿™äº›å˜åŒ–ï¼Œæ‚¨æŽ¥ä¸‹æ¥å¯ä»¥åšä»€ä¹ˆï¼Ÿ',
+      'å½“é‡åˆ°å›°éš¾æ—¶ï¼Œæ‚¨ä¼šå¯»æ±‚å“ªäº›æ”¯æŒï¼Ÿ',
     ],
     expectedDuration: 20,
     minMessages: 6,
     completionCriteria: [
-      '»Ø¹ËÁË×ÉÑ¯³É¹û',
-      '¹®¹ÌÁËÐÂµÄÈÏÖªºÍÐÐÎªÄ£Ê½',
-      'ÖÆ¶¨ÁËÎ¬³Ö¼Æ»®',
-      '¹æ»®ÁËºóÐøÖ§³Ö',
+      'å›žé¡¾äº†å’¨è¯¢æˆæžœ',
+      'å·©å›ºäº†æ–°çš„è®¤çŸ¥å’Œè¡Œä¸ºæ¨¡å¼',
+      'åˆ¶å®šäº†ç»´æŒè®¡åˆ’',
+      'è§„åˆ’äº†åŽç»­æ”¯æŒ',
     ],
   },
 }
@@ -184,7 +184,7 @@ export class KBEngine {
       .single()
 
     if (error || !data) {
-      throw new Error(`³õÊ¼»¯KB½ø¶ÈÊ§°Ü: ${error?.message}`)
+      throw new Error(`åˆå§‹åŒ–KBè¿›åº¦å¤±è´¥: ${error?.message}`)
     }
 
     return data
@@ -194,9 +194,9 @@ export class KBEngine {
     sessionId: string,
     messageCount: number,
     stageMessageCount: number,
-    completionData?: Record<string, any>,
+    completionData?: KBProgress['completion_criteria'],
   ): Promise<void> {
-    const updateData: Record<string, any> = {
+    const updateData: Record<string, unknown> = {
       total_messages: messageCount,
       stage_messages: stageMessageCount,
       updated_at: new Date().toISOString(),
@@ -212,7 +212,7 @@ export class KBEngine {
       .eq('session_id', sessionId)
 
     if (error) {
-      throw new Error(`¸üÐÂKB½ø¶ÈÊ§°Ü: ${error.message}`)
+      throw new Error(`æ›´æ–°KBè¿›åº¦å¤±è´¥: ${error.message}`)
     }
   }
 
@@ -227,7 +227,7 @@ export class KBEngine {
       .single()
 
     if (error || !progress) {
-      throw new Error('»ñÈ¡KB½ø¶ÈÊ§°Ü')
+      throw new Error('èŽ·å–KBè¿›åº¦å¤±è´¥')
     }
 
     return this.assessStageProgressFromRecord(progress, conversationHistory)
@@ -245,7 +245,7 @@ export class KBEngine {
     let completedCriteria = 0
 
     if (stageMessages < stageConfig.minMessages) {
-      missingCriteria.push(`ÐèÒªÖÁÉÙ${stageConfig.minMessages}Ìõ¶Ô»°ÏûÏ¢`)
+      missingCriteria.push(`éœ€è¦è‡³å°‘${stageConfig.minMessages}æ¡å¯¹è¯æ¶ˆæ¯`)
     } else {
       completedCriteria++
     }
@@ -257,7 +257,7 @@ export class KBEngine {
 
     const keywordMatches = this.analyzeKeywordMatches(currentStage, conversationText)
     if (keywordMatches.score < 0.6) {
-      missingCriteria.push('ÐèÒª¸üÉîÈëµØÌÖÂÛºËÐÄÎÊÌâ')
+      missingCriteria.push('éœ€è¦æ›´æ·±å…¥åœ°è®¨è®ºæ ¸å¿ƒé—®é¢˜')
     } else {
       completedCriteria++
     }
@@ -285,7 +285,7 @@ export class KBEngine {
       .single()
 
     if (error || !progress) {
-      throw new Error('»ñÈ¡KB½ø¶ÈÊ§°Ü')
+      throw new Error('èŽ·å–KBè¿›åº¦å¤±è´¥')
     }
 
     const currentStage = progress.current_stage as KBStage
@@ -324,7 +324,7 @@ export class KBEngine {
       .eq('session_id', sessionId)
 
     if (updateError) {
-      throw new Error(`¸üÐÂKB½×¶ÎÊ§°Ü: ${updateError.message}`)
+      throw new Error(`æ›´æ–°KBé˜¶æ®µå¤±è´¥: ${updateError.message}`)
     }
 
     return nextStage
@@ -332,11 +332,11 @@ export class KBEngine {
 
   private static analyzeKeywordMatches(stage: KBStage, conversationText: string): { score: number; matches: string[] } {
     const stageKeywords: Record<KBStage, string[]> = {
-      'KB-01': ['ÎÊÌâ', 'À§ÈÅ', '°ïÖú', 'Ä¿±ê', 'ÆÚÍû', 'Çé¿ö'],
-      'KB-02': ['¾ßÌå', '±íÏÖ', 'Ó°Ïì', '¸ÐÊÜ', 'ÇéÐ÷', '·¢Éú'],
-      'KB-03': ['Ô­Òò', 'Àí½â', 'Ïë·¨', 'ÈÏÎª', '¾õµÃ', '¾­Ñé'],
-      'KB-04': ['·½·¨', '¼Æ»®', 'Ä¿±ê', '¸Ä±ä', '³¢ÊÔ', 'ÐÐ¶¯'],
-      'KB-05': ['×Ü½á', 'ÊÕ»ñ', '°ïÖú', 'Î´À´', '¼Æ»®', 'ÆÚÍû'],
+      'KB-01': ['é—®é¢˜', 'å›°æ‰°', 'å¸®åŠ©', 'ç›®æ ‡', 'æœŸæœ›', 'æƒ…å†µ'],
+      'KB-02': ['å…·ä½“', 'è¡¨çŽ°', 'å½±å“', 'æ„Ÿå—', 'æƒ…ç»ª', 'å‘ç”Ÿ'],
+      'KB-03': ['åŽŸå› ', 'ç†è§£', 'æƒ³æ³•', 'è®¤ä¸º', 'è§‰å¾—', 'ç»éªŒ'],
+      'KB-04': ['æ–¹æ³•', 'è®¡åˆ’', 'ç›®æ ‡', 'æ”¹å˜', 'å°è¯•', 'è¡ŒåŠ¨'],
+      'KB-05': ['æ€»ç»“', 'æ”¶èŽ·', 'å¸®åŠ©', 'æœªæ¥', 'è®¡åˆ’', 'æœŸæœ›'],
     }
 
     const keywords = stageKeywords[stage] || []
@@ -354,17 +354,17 @@ export class KBEngine {
     const stageConfig = KB_STAGES[stage]
 
     if (completionRate < 0.3) {
-      recommendations.push(`µ±Ç°´¦ÓÚ${stageConfig.name}½×¶Î£¬½¨ÒéÖØµã¹Ø×¢£º${stageConfig.objectives[0]}`)
+      recommendations.push(`å½“å‰å¤„äºŽ${stageConfig.name}é˜¶æ®µï¼Œå»ºè®®é‡ç‚¹å…³æ³¨ï¼š${stageConfig.objectives[0]}`)
     } else if (completionRate < 0.6) {
-      recommendations.push(`¼ÌÐøÉîÈëÌ½ÌÖ${stageConfig.name}µÄºËÐÄÄÚÈÝ`)
+      recommendations.push(`ç»§ç»­æ·±å…¥æŽ¢è®¨${stageConfig.name}çš„æ ¸å¿ƒå†…å®¹`)
     } else if (completionRate < 0.8) {
-      recommendations.push(`¼´½«Íê³É${stageConfig.name}½×¶Î£¬ÇëÈ·±£´ï³ÉËùÓÐÄ¿±ê`)
+      recommendations.push(`å³å°†å®Œæˆ${stageConfig.name}é˜¶æ®µï¼Œè¯·ç¡®ä¿è¾¾æˆæ‰€æœ‰ç›®æ ‡`)
     } else {
-      recommendations.push(`${stageConfig.name}½×¶Î½øÕ¹Á¼ºÃ£¬¿ÉÒÔ¿¼ÂÇ½øÈëÏÂÒ»½×¶Î`)
+      recommendations.push(`${stageConfig.name}é˜¶æ®µè¿›å±•è‰¯å¥½ï¼Œå¯ä»¥è€ƒè™‘è¿›å…¥ä¸‹ä¸€é˜¶æ®µ`)
     }
 
     missingCriteria.forEach((criteria) => {
-      recommendations.push(`½¨Òé£º${criteria}`)
+      recommendations.push(`å»ºè®®ï¼š${criteria}`)
     })
 
     return recommendations
@@ -383,5 +383,6 @@ export class KBEngine {
 }
 
 export { KB_STAGES, type KBStageConfig }
+
 
 

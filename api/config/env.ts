@@ -1,4 +1,4 @@
-﻿// env keys renamed: SUPABASE_* -> SB_*, VITE_SUPABASE_* -> VITE_SB_*
+﻿// Environment configuration helpers
 import dotenv from 'dotenv'
 
 const result = dotenv.config()
@@ -43,13 +43,36 @@ const toNumber = (value: string | undefined, fallback: number): number => {
 
 const nodeEnv = getEnvValue('NODE_ENV', { fallback: 'development' })
 
+const supabaseUrl = getEnvValue('SB_URL', { required: true })
+const supabaseAnonKey = getEnvValue('SB_ANON_KEY', { required: true })
+const supabaseServiceRoleKey = getEnvValue('SB_SERVICE_ROLE_KEY', { required: true })
+
+const warnIfMismatch = (primaryKey: string, counterpartKeys: string[]): void => {
+  const primaryValue = process.env[primaryKey]
+  if (!primaryValue) return
+
+  for (const counterpartKey of counterpartKeys) {
+    const counterpartValue = process.env[counterpartKey]
+    if (!counterpartValue) continue
+
+    if (counterpartValue.trim() !== primaryValue.trim()) {
+      console.warn(
+        '[env] Mismatch detected between "' + primaryKey + '" and "' + counterpartKey + '". Ensure frontend and backend use the same Supabase project.'
+      )
+    }
+  }
+}
+
+warnIfMismatch('SB_URL', ['VITE_SB_URL'])
+warnIfMismatch('SB_ANON_KEY', ['VITE_SB_ANON_KEY'])
+
 export const env = {
   NODE_ENV: nodeEnv,
   IS_PRODUCTION: nodeEnv === 'production',
   PORT: toNumber(process.env.PORT, 3001),
-  SB_URL: getEnvValue('SB_URL', { required: true }),
-  SB_ANON_KEY: getEnvValue('SB_ANON_KEY', { required: true }),
-  SB_SERVICE_ROLE_KEY: getEnvValue('SB_SERVICE_ROLE_KEY', { required: true }),
+  SB_URL: supabaseUrl,
+  SB_ANON_KEY: supabaseAnonKey,
+  SB_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
   JWT_SECRET: getEnvValue('JWT_SECRET', {
     fallback: 'dev-jwt-secret',
     required: true,
@@ -92,6 +115,10 @@ if (env.IS_PRODUCTION) {
   }
 }
 
-if (env.CLIENT_ORIGINS.length === 0 && !env.IS_PRODUCTION) {
+if (env.CLIENT_ORIGINS.length === 0) {
+  if (env.IS_PRODUCTION) {
+    throw new Error('CLIENT_ORIGINS must be configured in production environment.')
+  }
+
   console.warn('[env] No CLIENT_ORIGINS configured, using development defaults.')
 }

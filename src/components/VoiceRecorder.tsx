@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Mic, MicOff, Play, Pause, Square, Volume2, VolumeX } from 'lucide-react'
+import { Mic, MicOff, Play, Pause, Square, Volume2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface VoiceRecorderProps {
@@ -49,7 +49,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   
   // 清理资源
   useEffect(() => {
@@ -118,7 +118,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         }))
       }, 100)
       
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to start recording:', error)
       toast.error('无法访问麦克风，请检查权限设置')
     }
@@ -251,7 +251,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       } else {
         throw new Error(result.error || '转录失败')
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Transcription error:', error)
       toast.error(error.message || '语音转录失败')
     } finally {
