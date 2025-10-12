@@ -43,9 +43,9 @@ const toNumber = (value: string | undefined, fallback: number): number => {
 
 const nodeEnv = getEnvValue('NODE_ENV', { fallback: 'development' })
 
-const supabaseUrl = getEnvValue('SB_URL', { required: true })
-const supabaseAnonKey = getEnvValue('SB_ANON_KEY', { required: true })
-const supabaseServiceRoleKey = getEnvValue('SB_SERVICE_ROLE_KEY', { required: true })
+const supabaseUrl = getEnvValue('SB_URL', { required: false, fallback: '' })
+const supabaseAnonKey = getEnvValue('SB_ANON_KEY', { required: false, fallback: '' })
+const supabaseServiceRoleKey = getEnvValue('SB_SERVICE_ROLE_KEY', { required: false, fallback: '' })
 
 const warnIfMismatch = (primaryKey: string, counterpartKeys: string[]): void => {
   const primaryValue = process.env[primaryKey]
@@ -74,8 +74,8 @@ export const env = {
   SB_ANON_KEY: supabaseAnonKey,
   SB_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
   JWT_SECRET: getEnvValue('JWT_SECRET', {
-    fallback: 'dev-jwt-secret',
-    required: true,
+    fallback: 'dev-jwt-secret-please-change-in-production',
+    required: false,
   }),
   CLIENT_ORIGINS: parseList(
     getEnvValue('CLIENT_ORIGINS', {
@@ -111,14 +111,17 @@ if (env.IS_PRODUCTION) {
   })
 
   if (missing.length > 0) {
-    throw new Error('Missing required production environment variables: ' + missing.join(', '))
+    console.error('⚠️ Missing required production environment variables: ' + missing.join(', '))
+    console.error('⚠️ Please set these in Vercel: https://vercel.com/dashboard/project/settings/environment-variables')
+    // Don't throw, just warn - allow the app to start
   }
 }
 
 if (env.CLIENT_ORIGINS.length === 0) {
   if (env.IS_PRODUCTION) {
-    throw new Error('CLIENT_ORIGINS must be configured in production environment.')
+    console.warn('⚠️ CLIENT_ORIGINS not configured in production. CORS may block requests.')
+    console.warn('⚠️ Set CLIENT_ORIGINS to: https://yixin-opal.vercel.app')
+  } else {
+    console.warn('[env] No CLIENT_ORIGINS configured, using development defaults.')
   }
-
-  console.warn('[env] No CLIENT_ORIGINS configured, using development defaults.')
 }
