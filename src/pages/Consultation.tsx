@@ -23,10 +23,14 @@ const Consultation: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
+  const [isAIProcessing, setIsAIProcessing] = useState(false)
+  const [isAutoVoiceMode, setIsAutoVoiceMode] = useState(false)
+
   // 语音相关
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
   const [audioChunks, setAudioChunks] = useState<Blob[]>([])
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   
   // 检查认证状态
   useEffect(() => {
@@ -56,7 +60,11 @@ const Consultation: React.FC = () => {
   // 加载会话数据
   useEffect(() => {
     if (sessionId && isAuthenticated) {
-      loadSession()
+      // 使用异步方式加载,避免阻塞UI
+      const timeoutId = setTimeout(() => {
+        loadSession()
+      }, 0)
+      return () => clearTimeout(timeoutId)
     }
   }, [sessionId, isAuthenticated, loadSession])
   
@@ -137,15 +145,97 @@ const Consultation: React.FC = () => {
     }
   }
   
-  // 处理录音完成
+  // 处理录音完成并发送语音消息
   useEffect(() => {
     if (audioChunks.length > 0 && !isRecording) {
-      // 这里应该将音频转换为文本，然后发送消息
-      // 暂时使用占位符文本
-      sendMessage('[语音消息]', 'audio')
+      handleVoiceMessage()
       setAudioChunks([])
     }
-  }, [audioChunks, isRecording, sendMessage])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioChunks, isRecording])
+
+  // 处理语音消息
+  const handleVoiceMessage = async () => {
+    if (audioChunks.length === 0 || !sessionId) return
+
+    try {
+      setIsAIProcessing(true)
+      setError(null)
+
+      // 合并音频块
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
+
+      // 发送音频到服务器进行处理
+      const formData = new FormData()
+      formData.append('audio', audioBlob, 'recording.webm')
+      formData.append('session_id', sessionId)
+      formData.append('message_type', 'audio')
+
+      const token = localStorage.getItem('auth_token')
+      const response = await fetch('/api/messages/voice', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        // 添加用户消息和AI回复到消息列表
+        setMessages(prev => [
+          ...prev,
+          result.data.user_message,
+          result.data.ai_message
+        ])
+
+        // 如果开启自动语音模式,播放AI回复
+        if (isAutoVoiceMode && result.data.ai_audio) {
+          playAIAudio(result.data.ai_audio)
+        }
+      } else {
+        throw new Error(result.error || '语音消息发送失败')
+      }
+    } catch (err) {
+      console.error('处理语音消息失败:', err)
+      setError(err instanceof Error ? err.message : '语音消息处理失败')
+    } finally {
+      setIsAIProcessing(false)
+    }
+  }
+
+  // 播放AI回复音频
+  const playAIAudio = (audioBase64: string) => {
+    try {
+      // 停止当前播放
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause()
+        currentAudioRef.current = null
+      }
+
+      // 创建新的音频元素
+      const audio = new Audio(`data:audio/wav;base64,${audioBase64}`)
+      currentAudioRef.current = audio
+
+      audio.onplay = () => setIsSpeaking(true)
+      audio.onended = () => {
+        setIsSpeaking(false)
+        // 自动语音模式下,AI说完后自动开始录音
+        if (isAutoVoiceMode && !isRecording) {
+          setTimeout(() => startRecording(), 500)
+        }
+      }
+      audio.onerror = () => {
+        setIsSpeaking(false)
+        console.error('音频播放失败')
+      }
+
+      audio.play()
+    } catch (err) {
+      console.error('播放AI音频失败:', err)
+    }
+  }
   
   // 语音播放
   const speakMessage = (text: string) => {
@@ -180,7 +270,17 @@ const Consultation: React.FC = () => {
   }
   
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 relative">
+      {/* 加载遮罩 */}
+      {isLoading && messages.length === 0 && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-700 font-medium">加载咨询会话中...</p>
+          </div>
+        </div>
+      )}
+
       {/* 头部 */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 px-4 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center space-x-3">
@@ -213,9 +313,27 @@ const Consultation: React.FC = () => {
             </div>
           </div>
         </div>
-        <button className="p-2 hover:bg-gray-100/80 rounded-xl transition-all duration-200 hover:scale-105">
-          <MoreVertical className="w-5 h-5 text-gray-600" />
-        </button>
+        <div className="flex items-center space-x-2">
+          {/* 自动语音模式切换 */}
+          <button
+            onClick={() => setIsAutoVoiceMode(!isAutoVoiceMode)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+              isAutoVoiceMode
+                ? 'bg-blue-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title={isAutoVoiceMode ? '关闭自动语音模式' : '开启自动语音模式'}
+          >
+            <div className="flex items-center space-x-1">
+              <Volume2 className="w-4 h-4" />
+              <span>{isAutoVoiceMode ? '语音模式' : '文字模式'}</span>
+            </div>
+          </button>
+
+          <button className="p-2 hover:bg-gray-100/80 rounded-xl transition-all duration-200 hover:scale-105">
+            <MoreVertical className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
       </div>
       
       {/* 错误提示 */}
@@ -265,14 +383,28 @@ const Consultation: React.FC = () => {
         ))}
         
         {/* 加载指示器 */}
-        {isLoading && (
+        {(isLoading || isAIProcessing) && (
           <div className="flex justify-start animate-in slide-in-from-bottom-2">
             <div className="bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-2xl px-4 py-3 shadow-sm">
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                <span className="text-sm text-gray-600 ml-2 font-medium">AI正在思考...</span>
+                <span className="text-sm text-gray-600 ml-2 font-medium">
+                  {isAIProcessing ? 'AI正在处理语音...' : 'AI正在思考...'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* AI正在说话指示器 */}
+        {isSpeaking && (
+          <div className="flex justify-start animate-in slide-in-from-bottom-2">
+            <div className="bg-green-50/80 backdrop-blur-sm border border-green-200/50 rounded-2xl px-4 py-3 shadow-sm">
+              <div className="flex items-center space-x-2">
+                <Volume2 className="w-4 h-4 text-green-600 animate-pulse" />
+                <span className="text-sm text-green-700 font-medium">AI正在回复...</span>
               </div>
             </div>
           </div>
@@ -299,25 +431,55 @@ const Consultation: React.FC = () => {
           <button
             type="button"
             onClick={isRecording ? stopRecording : startRecording}
-            className={`p-3 rounded-2xl transition-all duration-200 hover:scale-105 shadow-sm ${
+            className={`p-3 rounded-2xl transition-all duration-200 hover:scale-105 shadow-sm relative ${
               isRecording
                 ? 'bg-red-500 text-white shadow-red-200 animate-pulse'
+                : isSpeaking
+                ? 'bg-green-500 text-white shadow-green-200'
+                : isAIProcessing
+                ? 'bg-yellow-500 text-white shadow-yellow-200'
                 : 'bg-gray-100/80 text-gray-600 hover:bg-gray-200/80 hover:shadow-md'
             }`}
-            disabled={isLoading}
+            disabled={isLoading || isAIProcessing || isSpeaking}
+            title={
+              isRecording ? '停止录音' :
+              isSpeaking ? 'AI正在说话' :
+              isAIProcessing ? '正在处理' :
+              isAutoVoiceMode ? '点击开始语音对话' : '点击录音'
+            }
           >
-            {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            {isRecording ? (
+              <MicOff className="w-5 h-5" />
+            ) : isSpeaking ? (
+              <Volume2 className="w-5 h-5 animate-pulse" />
+            ) : (
+              <Mic className="w-5 h-5" />
+            )}
+            {isAutoVoiceMode && !isRecording && !isSpeaking && !isAIProcessing && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full animate-ping"></span>
+            )}
           </button>
           
           {/* 发送按钮 */}
           <button
             type="submit"
-            disabled={!inputMessage.trim() || isLoading}
+            disabled={!inputMessage.trim() || isLoading || isAutoVoiceMode}
             className="p-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md disabled:hover:scale-100"
+            title={isAutoVoiceMode ? '语音模式下请使用麦克风' : '发送消息'}
           >
             <Send className="w-5 h-5" />
           </button>
         </form>
+
+        {/* 语音模式提示 */}
+        {isAutoVoiceMode && (
+          <div className="text-center mt-2 text-sm text-blue-600">
+            <div className="flex items-center justify-center space-x-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              <span>自动语音模式已开启 - 点击麦克风开始对话</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

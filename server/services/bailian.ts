@@ -6,6 +6,7 @@ import axios, { AxiosInstance } from 'axios'
 import { KBEngine } from './kb-engine.js'
 import { env } from '../config/env.js'
 import { EthicsMonitor } from './ethics-monitor.js'
+import { ragLoader } from './rag-loader.js'
 
 // 百炼API请求接口
 // 百炼API响应接口
@@ -55,7 +56,8 @@ export interface CounselingResponse {
 
 class BailianService {
   private client: AxiosInstance
-  private readonly model = 'qwen3-omni-flash'
+  private readonly textModel = 'qwen-turbo'
+  private readonly voiceModel = 'qwen3-omni-flash-realtime'
   private readonly baseURL: string
   private readonly apiKey: string
 
@@ -213,72 +215,33 @@ class BailianService {
   }
 
   /**
-   * 构建系统提示词
+   * 构建系统提示词(使用RAG加载的内容)
    */
   private buildSystemPrompt(context: CounselingContext): string {
     const { kbStage, userProfile } = context
-    const stageConfig = KBEngine.getStageConfig(kbStage)
-    
-    let systemPrompt = `你是一位专业的AI心理咨询师，正在为来访者提供心理健康支持。
 
-当前咨询阶段：${stageConfig.name} (${kbStage})
-阶段描述：${stageConfig.description}
+    // 从kbStage字符串中提取阶段数字 (KB-01 -> 1)
+    const stageNumber = parseInt(kbStage.replace('KB-0', ''))
 
-咨询原则：
-1. 保持专业、温暖、非评判的态度
-2. 运用认知行为疗法(CBT)和人本主义疗法技巧
-3. 注重来访者的情感体验和认知模式
-4. 提供支持性和启发性的回应
-5. 严格遵守心理咨询伦理规范
-
-`
-    
+    // 构建用户上下文
+    const userContext: Record<string, unknown> = {}
     if (userProfile) {
-      systemPrompt += `来访者信息：
-- 年龄：${userProfile.age}岁
-- 性别：${userProfile.gender}
-- 职业：${userProfile.occupation}
-- 之前咨询次数：${userProfile.previousSessions}次
-
-`
+      userContext['年龄'] = userProfile.age ? `${userProfile.age}岁` : '未知'
+      userContext['性别'] = userProfile.gender || '未知'
+      userContext['职业'] = userProfile.occupation || '未知'
+      userContext['咨询次数'] = userProfile.previousSessions ? `${userProfile.previousSessions}次` : '首次'
     }
 
-    // 当前阶段的具体目标和关键问题
-    systemPrompt += `当前阶段目标：
-${stageConfig.objectives.map(obj => `- ${obj}`).join('\n')}
-
-`
-    
-    systemPrompt += `关键探索问题：
-${stageConfig.keyQuestions.map(q => `- ${q}`).join('\n')}
-
-`
-    
-    systemPrompt += `完成标准：
-${stageConfig.completionCriteria.map(c => `- ${c}`).join('\n')}
-
-`
-    
-    // 添加当前问题
     if (context.currentIssues && context.currentIssues.length > 0) {
-      systemPrompt += `\n当前关注的问题：${context.currentIssues.join('、')}\n`
+      userContext['当前关注'] = context.currentIssues.join('、')
     }
-    
-    // 添加风险等级提醒
+
     if (context.riskLevel && context.riskLevel !== 'low') {
-      systemPrompt += `\n⚠️ 风险等级：${context.riskLevel}\n请特别关注来访者的安全状况，必要时建议寻求专业帮助。\n`
+      userContext['风险等级'] = `${context.riskLevel} - 请特别关注安全`
     }
-    
-    systemPrompt += `请根据当前阶段目标，提供专业、温暖且有针对性的回应。回应应该：
-1. 体现对来访者感受的理解和共情
-2. 引导来访者深入探索当前阶段的核心内容
-3. 适当使用当前阶段的关键问题进行引导
-4. 提供适当的心理教育和技巧
-5. 鼓励来访者的积极改变
-6. 保持专业边界和伦理标准
-7. 根据阶段进度适时引导向下一阶段过渡`
-    
-    return systemPrompt
+
+    // 使用RAG加载器构建系统提示词
+    return ragLoader.buildSystemPrompt(stageNumber, userContext)
   }
 
   /**
@@ -400,10 +363,95 @@ ${stageConfig.completionCriteria.map(c => `- ${c}`).join('\n')}
   }
 
   /**
+   * 生成语音咨询回复(使用qwen3-omni-flash-realtime)
+   */
+  async generateVoiceCounselingResponse(
+    context: CounselingContext,
+    audioData: Buffer | Blob,
+    audioFormat: 'pcm' | 'wav' | 'mp3' = 'wav'
+  ): Promise<{
+    responseText: string
+    responseAudio: Buffer
+    ethicsCheck: EthicsCheckResult
+    usage: UsageStats
+  }> {
+    if (!this.client) {
+      throw new Error('百炼API未配置')
+    }
+
+    try {
+      // 1. 构建系统提示词
+      const systemPrompt = this.buildSystemPrompt(context)
+
+      // 2. 准备请求数据
+      const formData = new FormData()
+      formData.append('model', this.voiceModel)
+      formData.append('system_prompt', systemPrompt)
+
+      // 添加音频数据
+      const audioBlob = audioData instanceof Buffer ?
+        new Blob([audioData], { type: `audio/${audioFormat}` }) :
+        audioData
+      formData.append('audio', audioBlob, `input.${audioFormat}`)
+
+      // 添加对话历史
+      if (context.conversationHistory.length > 0) {
+        const recentHistory = context.conversationHistory.slice(-5)
+        formData.append('history', JSON.stringify(recentHistory))
+      }
+
+      // 添加配置参数
+      formData.append('parameters', JSON.stringify({
+        temperature: 0.7,
+        max_tokens: 500,
+        voice: 'female',  // 女声
+        speed: 1.0,
+        language: 'zh-CN'
+      }))
+
+      // 3. 调用API
+      const response = await this.client.post(
+        '/api/v1/services/aigc/multimodal-generation/generation',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          },
+          responseType: 'arraybuffer',  // 接收二进制音频数据
+          timeout: 60000  // 60秒超时
+        }
+      )
+
+      // 4. 解析响应
+      // 假设API返回格式: { text: string, audio: base64, usage: {} }
+      const responseText = response.headers['x-response-text'] || ''
+      const responseAudio = Buffer.from(response.data)
+
+      // 5. 伦理检查
+      const ethicsCheck = await this.performEthicsCheck(responseText, context)
+
+      return {
+        responseText,
+        responseAudio,
+        ethicsCheck,
+        usage: {
+          prompt_tokens: parseInt(response.headers['x-prompt-tokens'] || '0'),
+          completion_tokens: parseInt(response.headers['x-completion-tokens'] || '0'),
+          total_tokens: parseInt(response.headers['x-total-tokens'] || '0')
+        }
+      }
+    } catch (error) {
+      console.error('[百炼服务] 语音咨询回复生成失败:', error)
+      throw new Error('语音咨询服务暂时不可用')
+    }
+  }
+
+  /**
    * 健康检查
    */
   async healthCheck(): Promise<boolean> {
     try {
+      if (!this.client) return false
       const response = await this.client.get('/health', { timeout: 5000 })
       return response.status === 200
     } catch (error) {

@@ -9,8 +9,24 @@ import { bailianService } from '../services/bailian.js'
 import type { CounselingResponse, UsageStats, EthicsCheckResult } from '../services/bailian.js'
 import { KBEngine, type KBProgressAssessment } from '../services/kb-engine.js'
 import { EthicsMonitor } from '../services/ethics-monitor.js'
+import multer from 'multer'
 
 const router = Router()
+
+// 配置multer用于处理音频文件上传
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB限制
+  },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('audio/')) {
+      cb(null, true)
+    } else {
+      cb(new Error('只支持音频文件'))
+    }
+  }
+})
 
 interface CreateMessageBody {
   session_id?: string
@@ -486,8 +502,224 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
 })
 
 /**
- * 生成AI回复（临时模拟函数，后续将集成阿里云百炼API）
+ * 发送语音消息到AI咨询会话
+ * POST /api/messages/voice
  */
+router.post('/voice', upload.single('audio'), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { session_id, message_type = 'audio' } = req.body
+    const userId = req.user!.id
+    const audioFile = req.file
+
+    if (!session_id || !audioFile) {
+      res.status(400).json({
+        success: false,
+        error: 'Session ID and audio file are required'
+      })
+      return
+    }
+
+    // 验证会话所有权
+    const { data: sessionRecord, error: sessionError } = await supabase
+      .from('sessions')
+      .select('id, status, current_kb_step')
+      .eq('id', session_id)
+      .eq('user_id', userId)
+      .single()
+
+    if (sessionError || !sessionRecord) {
+      res.status(404).json({
+        success: false,
+        error: 'Session not found or access denied'
+      })
+      return
+    }
+
+    if (sessionRecord.status !== 'active') {
+      res.status(400).json({
+        success: false,
+        error: 'Session is not active'
+      })
+      return
+    }
+
+    // 获取会话完整信息
+    const { data: sessionData } = await supabase
+      .from('sessions')
+      .select(`
+        *,
+        users!inner (
+          id,
+          email,
+          user_profiles (
+            full_name,
+            age,
+            gender,
+            occupation
+          )
+        )
+      `)
+      .eq('id', session_id)
+      .eq('user_id', userId)
+      .single()
+
+    if (!sessionData) {
+      res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      })
+      return
+    }
+
+    const sessionWithUser = sessionData as SessionWithUserProfile
+
+    // 获取KB进度
+    let kbProgress: KBProgress | null = null
+    const { data: kbProgressRecord } = await supabase
+      .from('kb_progress')
+      .select('*')
+      .eq('session_id', session_id)
+      .single()
+
+    if (kbProgressRecord) {
+      kbProgress = kbProgressRecord
+    } else {
+      try {
+        kbProgress = await KBEngine.initializeKBProgress(session_id, userId)
+      } catch (error) {
+        console.error('Initialize KB progress error:', error)
+      }
+    }
+
+    // 获取对话历史
+    const { data: historyData } = await supabase
+      .from('messages')
+      .select('sender_type, content, created_at')
+      .eq('session_id', session_id)
+      .order('created_at', { ascending: true })
+      .limit(20)
+
+    const conversationHistory = (historyData || []).map(msg => ({
+      role: msg.sender_type === 'user' ? ('user' as const) : ('assistant' as const),
+      content: msg.content,
+      timestamp: new Date(msg.created_at)
+    }))
+
+    const primaryProfile = sessionWithUser.users.user_profiles?.[0]
+
+    // 构建咨询上下文
+    const context = {
+      sessionId: session_id,
+      userId,
+      kbStage: (kbProgress?.current_stage || 'KB-01') as 'KB-01' | 'KB-02' | 'KB-03' | 'KB-04' | 'KB-05',
+      userProfile: primaryProfile ? {
+        age: primaryProfile.age,
+        gender: primaryProfile.gender,
+        occupation: primaryProfile.occupation,
+        previousSessions: 0
+      } : undefined,
+      conversationHistory,
+      currentIssues: sessionWithUser.title ? [sessionWithUser.title] : undefined,
+      riskLevel: 'low' as const
+    }
+
+    // 调用百炼服务处理语音
+    let voiceResponse: Awaited<ReturnType<typeof bailianService.generateVoiceCounselingResponse>>
+    try {
+      voiceResponse = await bailianService.generateVoiceCounselingResponse(
+        context,
+        audioFile.buffer,
+        'wav'
+      )
+    } catch (error) {
+      console.error('Voice processing error:', error)
+      res.status(500).json({
+        success: false,
+        error: '语音处理失败'
+      })
+      return
+    }
+
+    // 保存用户消息(语音转文字后的内容)
+    const { data: userMessage } = await supabase
+      .from('messages')
+      .insert({
+        session_id: session_id,
+        sender_type: 'user',
+        content: voiceResponse.responseText,
+        message_type: message_type,
+        metadata: {
+          audio_format: audioFile.mimetype,
+          audio_size: audioFile.size
+        }
+      })
+      .select('*')
+      .single()
+
+    if (!userMessage) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to save user message'
+      })
+      return
+    }
+
+    // 保存AI回复
+    const { data: aiMessage } = await supabase
+      .from('messages')
+      .insert({
+        session_id: session_id,
+        sender_type: 'ai',
+        content: voiceResponse.responseText,
+        message_type: 'audio',
+        metadata: {
+          kb_stage: context.kbStage,
+          has_audio: true,
+          ethics_check: voiceResponse.ethicsCheck,
+          usage: voiceResponse.usage
+        }
+      })
+      .select('*')
+      .single()
+
+    if (!aiMessage) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to save AI message'
+      })
+      return
+    }
+
+    // 更新会话时间
+    await supabase
+      .from('sessions')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', session_id)
+
+    // 将音频转换为base64返回
+    const audioBase64 = voiceResponse.responseAudio.toString('base64')
+
+    res.status(201).json({
+      success: true,
+      message: 'Voice message sent successfully',
+      data: {
+        user_message: userMessage,
+        ai_message: aiMessage,
+        ai_audio: audioBase64,
+        usage: voiceResponse.usage,
+        ethics_check: voiceResponse.ethicsCheck
+      }
+    })
+
+  } catch (error) {
+    console.error('Send voice message error:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    })
+  }
+})
+
 export default router
 
 

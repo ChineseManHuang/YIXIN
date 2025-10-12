@@ -14,7 +14,15 @@
       "Bash(git commit:*)",
       "WebFetch(domain:yixin-opal.vercel.app)",
       "Bash(curl:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "mcp__mcp-chrome__chrome_navigate",
+      "mcp__mcp-chrome__chrome_screenshot",
+      "mcp__mcp-chrome__chrome_get_web_content",
+      "mcp__mcp-chrome__chrome_network_debugger_start",
+      "mcp__mcp-chrome__chrome_get_interactive_elements",
+      "mcp__mcp-chrome__chrome_fill_or_select",
+      "mcp__mcp-chrome__chrome_console",
+      "Bash(vercel env:*)"
     ],
     "deny": [],
     "ask": []
