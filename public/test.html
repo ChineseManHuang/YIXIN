@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YIXIN - 测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-box {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success { color: #22c55e; }
+        .error { color: #ef4444; }
+        .loading { color: #3b82f6; }
+        button {
+            background: #6366f1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #4f46e5;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>YIXIN 部署测试页面</h1>
+
+    <div class="test-box">
+        <h2>1. 静态文件加载测试</h2>
+        <p id="static-test" class="success">✓ HTML加载成功</p>
+        <p id="js-test" class="loading">⏳ JavaScript加载中...</p>
+    </div>
+
+    <div class="test-box">
+        <h2>2. API连接测试</h2>
+        <button onclick="testAPI()">测试 /api/health</button>
+        <p id="api-result" class="loading">点击按钮测试API</p>
+        <pre id="api-response"></pre>
+    </div>
+
+    <div class="test-box">
+        <h2>3. 环境信息</h2>
+        <pre id="env-info"></pre>
+    </div>
+
+    <div class="test-box">
+        <h2>4. 主应用测试</h2>
+        <button onclick="location.href='/'">访问主应用</button>
+        <p>如果主应用空白，但这个页面能显示，说明是React应用的问题</p>
+    </div>
+
+    <script>
+        // 测试JavaScript加载
+        document.getElementById('js-test').innerHTML = '<span class="success">✓ JavaScript执行成功</span>';
+
+        // 显示环境信息
+        const envInfo = {
+            'URL': window.location.href,
+            'User Agent': navigator.userAgent,
+            'Screen': `${window.screen.width}x${window.screen.height}`,
+            'Viewport': `${window.innerWidth}x${window.innerHeight}`,
+            'Origin': window.location.origin
+        };
+        document.getElementById('env-info').textContent = JSON.stringify(envInfo, null, 2);
+
+        // API测试函数
+        async function testAPI() {
+            const resultEl = document.getElementById('api-result');
+            const responseEl = document.getElementById('api-response');
+
+            resultEl.className = 'loading';
+            resultEl.textContent = '⏳ 测试中...';
+            responseEl.textContent = '';
+
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    resultEl.className = 'success';
+                    resultEl.textContent = '✓ API连接成功！';
+                } else {
+                    resultEl.className = 'error';
+                    resultEl.textContent = '✗ API返回错误';
+                }
+
+                responseEl.textContent = JSON.stringify({
+                    status: response.status,
+                    statusText: response.statusText,
+                    data: data
+                }, null, 2);
+            } catch (error) {
+                resultEl.className = 'error';
+                resultEl.textContent = '✗ API连接失败: ' + error.message;
+                responseEl.textContent = error.stack || error.toString();
+            }
+        }
+
+        // 页面加载完成后自动测试API
+        window.addEventListener('load', () => {
+            setTimeout(testAPI, 500);
+        });
+    </script>
+</body>
+</html>
