@@ -21,7 +21,21 @@ const allowedOrigins = env.CLIENT_ORIGINS
 
 const corsOptions: CorsOptions = {
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (like mobile apps, Postman, or same-origin)
+    if (!origin) {
+      callback(null, true)
+      return
+    }
+
+    // Allow if in whitelist
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true)
+      return
+    }
+
+    // In production, be strict; in development, be permissive
+    if (!env.IS_PRODUCTION) {
+      console.warn(`[CORS] Allowing non-whitelisted origin in dev: ${origin}`)
       callback(null, true)
       return
     }
@@ -29,7 +43,7 @@ const corsOptions: CorsOptions = {
     callback(new Error('Origin not allowed by CORS: ' + origin), false)
   },
   credentials: true,
-  methods: ['POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'apikey'],
 }
 
