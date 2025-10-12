@@ -11,7 +11,9 @@
       "Bash(vercel link:*)",
       "Bash(cat:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "WebFetch(domain:yixin-opal.vercel.app)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
