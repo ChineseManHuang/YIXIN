@@ -19,12 +19,17 @@ const getDefaultApiBaseUrl = (): string => {
   return 'http://localhost:3001/api'
 }
 
-const rawApiBaseUrl = import.meta.env.VITE_API_URL || getDefaultApiBaseUrl()
-const API_BASE_URL = trimTrailingSlash(rawApiBaseUrl)
-
-if (import.meta.env.DEV) {
-  console.log('[env] API client config', {
-    MODE: import.meta.env.MODE,
+const rawApiBaseUrl = import.meta.env.VITE_API_URL || getDefaultApiBaseUrl()
+const API_BASE_URL = trimTrailingSlash(rawApiBaseUrl)
+
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+if (import.meta.env.DEV) {
+  console.log('[env] API client config', {
+    MODE: import.meta.env.MODE,
     has_VITE_SB_URL: Boolean(import.meta.env.VITE_SB_URL),
     anonKeyLength: import.meta.env.VITE_SB_ANON_KEY?.length ?? 0,
     VITE_API_URL: import.meta.env.VITE_API_URL ?? '(fallback to window.origin)',

@@ -253,7 +253,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       }
     } catch (error: unknown) {
       console.error('Transcription error:', error)
-      toast.error(error.message || '语音转录失败')
+      const errorMessage = error instanceof Error ? error.message : '语音转录失败'
+      toast.error(errorMessage)
     } finally {
       setIsTranscribing(false)
     }

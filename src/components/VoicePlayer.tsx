@@ -69,15 +69,8 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
     }
   }, [audioUrl])
   
-  // 自动播放
-  useEffect(() => {
-    if (autoPlay && text) {
-      handlePlay()
-    }
-  }, [autoPlay, text, handlePlay])
-  
   // 生成语音
-  const generateSpeech = useCallback(async (): Promise<string> => {
+  const generateSpeech = useCallback(async (): Promise<string | null> => {
     try {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/voice/text-to-speech', {
@@ -111,6 +104,7 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
       }))
       onError?.(errorMsg)
       toast.error(errorMsg)
+      return null
     }
   }, [text, voice, speed, language, onError])
   // 播放语音
@@ -133,6 +127,10 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
       
       // 生成新的语音
       const url = await generateSpeech()
+      if (!url) {
+        setPlaybackState(prev => ({ ...prev, isLoading: false }))
+        return
+      }
       setAudioUrl(url)
       
       // 创建音频元素
@@ -212,6 +210,13 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
     onError,
     generateSpeech
   ])
+
+  // 自动播放
+  useEffect(() => {
+    if (autoPlay && text) {
+      handlePlay()
+    }
+  }, [autoPlay, text, handlePlay])
   // 暂停播放
   const handlePause = () => {
     if (audioRef.current) {

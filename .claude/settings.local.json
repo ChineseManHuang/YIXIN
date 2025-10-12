@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__fetch__imageFetch",
+      "Bash(npm run build:*)",
+      "Bash(vercel --version:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

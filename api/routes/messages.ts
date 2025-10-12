@@ -5,7 +5,8 @@
 import { Router, type Request, type Response } from 'express'
 import { supabase, type KBProgress } from '../config/database.js'
 import { authenticateToken } from '../middleware/auth.js'
-import { bailianService, type CounselingResponse, type UsageStats, type EthicsCheckResult } from '../services/bailian'
+import { bailianService } from '../services/bailian'
+import type { CounselingResponse, UsageStats, EthicsCheckResult } from '../services/bailian'
 import { KBEngine, type KBProgressAssessment } from '../services/kb-engine'
 import { EthicsMonitor } from '../services/ethics-monitor'
 
@@ -253,7 +254,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       usage = result.usage
 
       if (ethicsCheck && (ethicsCheck.riskLevel !== 'low' || ethicsCheck.concerns.length > 0)) {
-        await EthicsMonitor.logEthicsCheck(sessionId, userId, trimmedContent, ethicsCheck)
+        const monitorResult = EthicsMonitor.analyzeMessage(trimmedContent, {
+          conversationHistory,
+          userProfile: context.userProfile,
+          sessionId: context.sessionId,
+        })
+        await EthicsMonitor.logEthicsCheck(sessionId, userId, trimmedContent, monitorResult)
       }
     } catch (error: unknown) {
       console.error('AI回复生成失败:', error)
@@ -429,7 +435,7 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.id
 
     const { data: message, error: messageError } = await supabase
-      .from<MessageWithSession>('messages')
+      .from('messages')
       .select(`
         id,
         sessions!inner(
@@ -439,7 +445,12 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
       .eq('id', id)
       .single()
 
-    if (messageError || !message || message.sessions.user_id !== userId) {
+    const sessions = (message as { sessions?: { user_id?: string } | Array<{ user_id?: string }> } | null)?.sessions
+    const ownerUserId = Array.isArray(sessions)
+      ? sessions[0]?.user_id
+      : (sessions as { user_id?: string } | undefined)?.user_id
+
+    if (messageError || !message || ownerUserId !== userId) {
       res.status(404).json({
         success: false,
         error: 'Message not found or access denied',
@@ -478,6 +489,14 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
  * 生成AI回复（临时模拟函数，后续将集成阿里云百炼API）
  */
 export default router
+
+
+
+
+
+
+
+
 
 
 

@@ -115,12 +115,13 @@ export class VoiceService {
       }
     } catch (error: unknown) {
       console.error('[VoiceService] Voice to text error:', error)
+      const errorMessage = error instanceof Error ? error.message : '语音识别失败'
       return {
         success: false,
         text: '',
         confidence: 0,
         duration: 0,
-        error: error.message || '语音识别失败'
+        error: errorMessage
       }
     }
   }
@@ -157,10 +158,11 @@ export class VoiceService {
       }
     } catch (error: unknown) {
       console.error('[VoiceService] Text to voice error:', error)
+      const errorMessage = error instanceof Error ? error.message : '语音合成失败'
       return {
         success: false,
         duration: 0,
-        error: error.message || '语音合成失败'
+        error: errorMessage
       }
     }
   }

@@ -29,19 +29,28 @@ interface CounselingContext {
   riskLevel?: 'low' | 'medium' | 'high' | 'critical'
 }
 
-interface UsageStats {
+export interface UsageStats {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  [key: string]: unknown
 }
 
 // 伦理检查结果接口
-interface EthicsCheckResult {
+export interface EthicsCheckResult {
   isEthical: boolean
   riskLevel: 'low' | 'medium' | 'high' | 'critical'
   concerns: string[]
   recommendations: string[]
   shouldBlock: boolean
+  [key: string]: unknown
+}
+
+export interface CounselingResponse {
+  response: string
+  ethicsCheck: EthicsCheckResult
+  usage: UsageStats
+  [key: string]: unknown
 }
 
 class BailianService {
@@ -102,7 +111,7 @@ class BailianService {
   async generateCounselingResponse(
     context: CounselingContext,
     userMessage: string
-  ): Promise<{ response: string; ethicsCheck: EthicsCheckResult; usage: UsageStats }> {
+  ): Promise<CounselingResponse> {
     // 如果没有配置API，返回模拟响应
     if (!this.client) {
       return this.getMockCounselingResponse(context, userMessage)
@@ -177,7 +186,7 @@ class BailianService {
   private getMockCounselingResponse(
     context: CounselingContext,
     userMessage: string
-  ): { response: string; ethicsCheck: EthicsCheckResult; usage: UsageStats } {
+  ): CounselingResponse {
     const mockResponses = {
       'KB-01': `我理解您现在的感受。能告诉我更多关于这个问题的具体情况吗？这样我能更好地帮助您。`,
       'KB-02': `感谢您的分享。让我们一起来分析一下这个问题的根源，这有助于我们找到合适的解决方案。`,

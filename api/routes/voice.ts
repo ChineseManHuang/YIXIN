@@ -460,11 +460,18 @@ router.get('/supported-formats', (req: Request, res: Response) => {
 
  */
 
-function getAudioFormat(mimeType: string, filename?: string): 'wav' | 'mp3' | 'webm' | 'ogg' {
+const SUPPORTED_AUDIO_FORMATS = ['wav', 'mp3', 'webm', 'ogg'] as const
+type AudioFormat = (typeof SUPPORTED_AUDIO_FORMATS)[number]
+
+const isAudioFormat = (value: string): value is AudioFormat => {
+  return SUPPORTED_AUDIO_FORMATS.some((format) => format === value)
+}
+
+function getAudioFormat(mimeType: string, filename?: string): AudioFormat {
 
   // 首先尝试从MIME类型推断
 
-  const mimeToFormat: Record<string, string> = {
+  const mimeToFormat: Record<string, AudioFormat> = {
 
     'audio/wav': 'wav',
 
@@ -494,7 +501,7 @@ function getAudioFormat(mimeType: string, filename?: string): 'wav' | 'mp3' | 'w
 
     const extension = filename.split('.').pop()?.toLowerCase()
 
-    if (extension && ['wav', 'mp3', 'webm', 'ogg'].includes(extension)) {
+    if (extension && isAudioFormat(extension)) {
 
       return extension
 
