@@ -6,14 +6,10 @@
       "includeFiles": "server/**"
     }
   },
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/index.ts"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/api/:path*",
+      "destination": "/api/index.ts"
     }
   ],
   "buildCommand": "npm run build",
