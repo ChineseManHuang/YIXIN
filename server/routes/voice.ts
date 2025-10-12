@@ -2,11 +2,11 @@ import { Router, Request, Response, NextFunction } from 'express'
 
 import multer from 'multer'
 
-import { voiceService, VoiceService } from '../services/voice'
+import { voiceService, VoiceService } from '../services/voice.js'
 
-import { authenticateToken } from '../middleware/auth'
+import { authenticateToken } from '../middleware/auth.js'
 
-import { supabase } from '../config/database'
+import { supabase } from '../config/database.js'
 
 
 

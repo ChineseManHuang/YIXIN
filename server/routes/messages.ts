@@ -5,10 +5,10 @@
 import { Router, type Request, type Response } from 'express'
 import { supabase, type KBProgress } from '../config/database.js'
 import { authenticateToken } from '../middleware/auth.js'
-import { bailianService } from '../services/bailian'
-import type { CounselingResponse, UsageStats, EthicsCheckResult } from '../services/bailian'
-import { KBEngine, type KBProgressAssessment } from '../services/kb-engine'
-import { EthicsMonitor } from '../services/ethics-monitor'
+import { bailianService } from '../services/bailian.js'
+import type { CounselingResponse, UsageStats, EthicsCheckResult } from '../services/bailian.js'
+import { KBEngine, type KBProgressAssessment } from '../services/kb-engine.js'
+import { EthicsMonitor } from '../services/ethics-monitor.js'
 
 const router = Router()
 

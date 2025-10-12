@@ -3,9 +3,9 @@
  * 实现与qwen3-omni-flash模型的通信
  */
 import axios, { AxiosInstance } from 'axios'
-import { KBEngine } from './kb-engine'
+import { KBEngine } from './kb-engine.js'
 import { env } from '../config/env.js'
-import { EthicsMonitor } from './ethics-monitor'
+import { EthicsMonitor } from './ethics-monitor.js'
 
 // 百炼API请求接口
 // 百炼API响应接口

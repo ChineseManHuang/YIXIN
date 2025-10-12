@@ -1,5 +1,5 @@
-import { supabase } from '../config/database'
-import type { UserProfile } from '../config/database'
+import { supabase } from '../config/database.js'
+import type { UserProfile } from '../config/database.js'
 
 // 风险等级定义
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'

@@ -1,19 +1,19 @@
 /**
- * 会话管理API路由
- * 处理AI咨询会话的创建、获取、更新等功能
+ * 锟结话锟斤拷锟斤拷API路锟斤拷
+ * 锟斤拷锟斤拷AI锟斤拷询锟结话锟侥达拷锟斤拷锟斤拷锟斤拷取锟斤拷锟斤拷锟铰等癸拷锟斤拷
  */
 import { Router, type Request, type Response } from 'express'
 import { supabase } from '../config/database.js'
 import { authenticateToken } from '../middleware/auth.js'
-import { KBEngine } from '../services/kb-engine'
+import { KBEngine } from '../services/kb-engine.js'
 
 const router = Router()
 
-// 所有会话路由都需要认证
+// 锟斤拷锟叫会话路锟缴讹拷锟斤拷要锟斤拷证
 router.use(authenticateToken)
 
 /**
- * 创建新的咨询会话
+ * 锟斤拷锟斤拷锟铰碉拷锟斤拷询锟结话
  * POST /api/sessions
  */
 router.post('/', async (req: Request, res: Response): Promise<void> => {
@@ -50,7 +50,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    // 初始化 KB 进度
+    // 锟斤拷始锟斤拷 KB 锟斤拷锟斤拷
     try {
       await KBEngine.initializeKBProgress(session.id, userId)
     } catch (kbError) {
@@ -72,7 +72,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 })
 
 /**
- * 获取用户的所有会话
+ * 锟斤拷取锟矫伙拷锟斤拷锟斤拷锟叫会话
  * GET /api/sessions
  */
 router.get('/', async (req: Request, res: Response): Promise<void> => {
@@ -116,7 +116,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 })
 
 /**
- * 获取特定会话详情
+ * 锟斤拷取锟截讹拷锟结话锟斤拷锟斤拷
  * GET /api/sessions/:id
  */
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
@@ -178,7 +178,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 })
 
 /**
- * 更新会话信息
+ * 锟斤拷锟铰会话锟斤拷息
  * PUT /api/sessions/:id
  */
 router.put('/:id', async (req: Request, res: Response): Promise<void> => {
@@ -248,7 +248,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 })
 
 /**
- * 删除会话
+ * 删锟斤拷锟结话
  * DELETE /api/sessions/:id
  */
 router.delete('/:id', async (req: Request, res: Response): Promise<void> => {

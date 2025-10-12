@@ -1,5 +1,5 @@
-﻿import { supabase } from '../config/database'
-import type { KBProgress } from '../config/database'
+﻿import { supabase } from '../config/database.js'
+import type { KBProgress } from '../config/database.js'
 
 export type KBStage = 'KB-01' | 'KB-02' | 'KB-03' | 'KB-04' | 'KB-05'
 
