@@ -5,4 +5,4 @@ dist
 .trae
 .log
 .figma
- # 重要：不要忽略 api/* 源码，否则 Vercel 无法打包后端函数
+# 重要：不要忽略 api/* 源码，否则 Vercel 无法打包后端函数
