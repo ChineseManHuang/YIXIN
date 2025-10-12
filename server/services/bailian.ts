@@ -389,9 +389,12 @@ class BailianService {
       formData.append('system_prompt', systemPrompt)
 
       // 添加音频数据
-      const audioBlob = audioData instanceof Buffer ?
-        new Blob([audioData], { type: `audio/${audioFormat}` }) :
-        audioData
+      let audioBlob: Blob
+      if (audioData instanceof Buffer) {
+        audioBlob = new Blob([audioData], { type: `audio/${audioFormat}` })
+      } else {
+        audioBlob = audioData as Blob
+      }
       formData.append('audio', audioBlob, `input.${audioFormat}`)
 
       // 添加对话历史
