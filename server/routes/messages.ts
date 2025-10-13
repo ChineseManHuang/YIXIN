@@ -627,8 +627,8 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
     let userTranscript: string
     let aiResponseText: string
     let aiAudioBase64: string | null = null
-    let usage: typeof bailianService.generateVoiceCounselingResponse extends (...args: any[]) => Promise<infer R> ? R['usage'] : never
-    let ethicsCheck: typeof bailianService.generateVoiceCounselingResponse extends (...args: any[]) => Promise<infer R> ? R['ethicsCheck'] : never
+    let usage: UsageStats | null = null
+    let ethicsCheck: EthicsCheckResult | null = null
 
     try {
       const voiceResponse = await bailianService.generateVoiceCounselingResponse(
