@@ -71,3 +71,7 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+
+# Documentation files (local only)
+*.md
+!README.md
