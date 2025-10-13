@@ -15,6 +15,7 @@ import Chat from './pages/Chat'
 import Profile from './pages/Profile'
 import Resources from './pages/Resources'
 import Help from './pages/Help'
+import VoiceConsultation from './pages/VoiceConsultation'
 
 // 受保护的路由组件
 interface ProtectedRouteProps {
@@ -95,16 +96,24 @@ const App: React.FC = () => {
               </ProtectedRoute>
             } 
           />
-          <Route 
-            path="/resources" 
+          <Route
+            path="/resources"
             element={
               <ProtectedRoute>
                 <Resources />
               </ProtectedRoute>
-            } 
+            }
+          />
+          <Route
+            path="/consultation/:sessionId"
+            element={
+              <ProtectedRoute>
+                <VoiceConsultation />
+              </ProtectedRoute>
+            }
           />
           <Route path="/help" element={<Help />} />
-          
+
           {/* 404 页面 */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

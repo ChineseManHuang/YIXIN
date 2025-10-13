@@ -100,7 +100,7 @@ const Dashboard: React.FC = () => {
     loadDashboardData()
   }, [isAuthenticated])
 
-  // 创建新会话
+  // 创建新会话 - 文字模式
   const handleCreateSession = async () => {
     try {
       const response = await api.sessions.create('新的心理咨询会话')
@@ -112,6 +112,21 @@ const Dashboard: React.FC = () => {
     } catch (err) {
       console.error('创建会话失败:', err)
       setError(err instanceof Error ? err.message : '创建会话失败')
+    }
+  }
+
+  // 创建新会话 - 语音模式
+  const handleCreateVoiceSession = async () => {
+    try {
+      const response = await api.sessions.create('语音心理咨询会话')
+      if (response.success && response.data) {
+        navigate(`/consultation/${response.data.session.id}`)
+      } else {
+        throw new Error(response.error || '创建语音会话失败')
+      }
+    } catch (err) {
+      console.error('创建语音会话失败:', err)
+      setError(err instanceof Error ? err.message : '创建语音会话失败')
     }
   }
 
@@ -331,13 +346,22 @@ const Dashboard: React.FC = () => {
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">我的咨询会话</h2>
-              <button
-                onClick={handleCreateSession}
-                className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md"
-              >
-                <Plus className="w-4 h-4" />
-                <span>新建会话</span>
-              </button>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleCreateSession}
+                  className="flex items-center space-x-2 px-5 py-3 bg-white border-2 border-blue-600 text-blue-600 rounded-xl hover:bg-blue-50 transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>文字咨询</span>
+                </button>
+                <button
+                  onClick={handleCreateVoiceSession}
+                  className="flex items-center space-x-2 px-5 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>语音咨询</span>
+                </button>
+              </div>
             </div>
             
             {/* 搜索和筛选 */}
@@ -414,11 +438,16 @@ const Dashboard: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {filteredSessions.map((session) => (
+                {filteredSessions.map((session) => {
+                  // 判断是否为语音会话(根据标题判断)
+                  const isVoiceSession = session.title.includes('语音')
+                  const sessionPath = isVoiceSession ? `/consultation/${session.id}` : `/chat/${session.id}`
+
+                  return (
                   <div
                     key={session.id}
                     className="flex items-center justify-between p-6 border border-gray-200/50 rounded-2xl hover:bg-gray-50/50 transition-all duration-200 hover:scale-[1.02] cursor-pointer group shadow-sm hover:shadow-md"
-                    onClick={() => navigate(`/chat/${session.id}`)}
+                    onClick={() => navigate(sessionPath)}
                   >
                     <div className="flex items-center space-x-4 flex-1">
                       <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
@@ -452,7 +481,8 @@ const Dashboard: React.FC = () => {
                       <MoreVertical className="w-5 h-5" />
                     </button>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
