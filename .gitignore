@@ -75,3 +75,5 @@ temp/
 # Documentation files (local only)
 *.md
 !README.md
+!DEPLOYMENT_GUIDE.md
+!QUICK_REFERENCE.md
