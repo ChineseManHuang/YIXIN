@@ -112,7 +112,7 @@ if (env.IS_PRODUCTION) {
 
   if (missing.length > 0) {
     console.error('⚠️ Missing required production environment variables: ' + missing.join(', '))
-    console.error('⚠️ Please set these in Vercel: https://vercel.com/dashboard/project/settings/environment-variables')
+    console.error('⚠️ Please set these in your deployment environment or .env file')
     // Don't throw, just warn - allow the app to start
   }
 }
@@ -120,7 +120,7 @@ if (env.IS_PRODUCTION) {
 if (env.CLIENT_ORIGINS.length === 0) {
   if (env.IS_PRODUCTION) {
     console.warn('⚠️ CLIENT_ORIGINS not configured in production. CORS may block requests.')
-    console.warn('⚠️ Set CLIENT_ORIGINS to: https://yixin-opal.vercel.app')
+    console.warn('⚠️ Set CLIENT_ORIGINS to your frontend domain (e.g., https://yinxintest99.edgeone.app)')
   } else {
     console.warn('[env] No CLIENT_ORIGINS configured, using development defaults.')
   }

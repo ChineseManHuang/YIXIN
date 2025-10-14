@@ -9,21 +9,19 @@
   "scripts": {
     "client:dev": "vite",
     "build": "tsc -b && vite build",
+    "build:server": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "server:dev": "nodemon",
-    "server:socket": "tsx api/server.ts",
+    "server:start": "node --loader tsx server/index.ts",
+    "server:prod": "NODE_ENV=production node --loader tsx server/index.ts",
     "dev": "concurrently \"npm run client:dev\" \"npm run server:dev\"",
-    "dev:socket": "concurrently \"npm run client:dev\" \"npm run server:socket\"",
-    "deploy": "tsx scripts/deploy.ts",
-    "deploy:backend": "npm run deploy -- --target backend",
-    "deploy:frontend": "npm run deploy -- --target frontend"
+    "start": "npm run server:start"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",
     "@types/multer": "^2.0.0",
-    "@vercel/speed-insights": "^1.2.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
@@ -54,7 +52,6 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/react-router-dom": "^5.3.3",
-    "@vercel/node": "^5.3.6",
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "babel-plugin-react-dev-locator": "^1.0.0",
