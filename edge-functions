@@ -1,0 +1,33 @@
+export default function onRequest(context) {
+  return new Response('Hello from Edge Functions!');
+}
+
+// /api/chat.js - 完整配置版本
+export default async function handler(request) {
+  if (request.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405 });
+  }
+
+  const { message, userId } = await request.json();
+  
+  // 调用百炼API - 使用实际配置
+  const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${sk-973083c9be1d48e5a55010fa7d30fb9a}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'qwen3-omni-flash-realtime',
+      messages: [{ role: 'user', content: message }]
+    })
+  });
+
+  const aiResponse = await response.json();
+  
+  return new Response(JSON.stringify({
+    reply: aiResponse.choices[0].message.content
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
