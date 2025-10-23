@@ -1,12 +1,12 @@
 {
   "$schema": "https://pages.edgeone.ai/schema.json",
-  "framework": {
-    "type": "static"
-  },
+  "framework": "static",
   "build": {
     "command": "npm run build",
     "outputDirectory": "dist",
     "installCommand": "npm install"
   },
-  "plugins": []
+  "plugins": {
+    "nextjs": false
+  }
 }
