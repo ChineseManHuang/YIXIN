@@ -1,4 +1,5 @@
-﻿import { supabase } from '../config/database.js'
+﻿import { v4 as uuidv4 } from 'uuid'
+import { query, queryOne, TABLES } from '../config/database.js'
 import type { KBProgress } from '../config/database.js'
 
 export type KBStage = 'KB-01' | 'KB-02' | 'KB-03' | 'KB-04' | 'KB-05'
@@ -166,25 +167,27 @@ export class KBEngine {
   }
 
   static async initializeKBProgress(sessionId: string, userId: string): Promise<KBProgress> {
-    const { data, error } = await supabase
-      .from('kb_progress')
-      .insert({
-        session_id: sessionId,
-        user_id: userId,
-        current_stage: 'KB-01',
-        stage_progress: {
-          'KB-01': { started: true, completed: false, startTime: new Date().toISOString() },
-        },
-        completion_criteria: {},
-        total_messages: 0,
-        stage_messages: 0,
-        completed_stages: [],
-      })
-      .select('*')
-      .single()
+    const id = uuidv4()
+    const now = new Date().toISOString()
+    const stageProgress = JSON.stringify({
+      'KB-01': { started: true, completed: false, startTime: now },
+    })
 
-    if (error || !data) {
-      throw new Error(`初始化KB进度失败: ${error?.message}`)
+    await query(
+      `INSERT INTO ${TABLES.KB_PROGRESS}
+       (id, session_id, user_id, current_stage, stage_progress, completion_criteria,
+        total_messages, stage_messages, completed_stages, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, sessionId, userId, 'KB-01', stageProgress, '{}', 0, 0, '[]', now, now]
+    )
+
+    const data = await queryOne<KBProgress>(
+      `SELECT * FROM ${TABLES.KB_PROGRESS} WHERE id = $1`,
+      [id]
+    )
+
+    if (!data) {
+      throw new Error('初始化KB进度失败: 无法获取创建的记录')
     }
 
     return data
@@ -196,23 +199,22 @@ export class KBEngine {
     stageMessageCount: number,
     completionData?: KBProgress['completion_criteria'],
   ): Promise<void> {
-    const updateData: Record<string, unknown> = {
-      total_messages: messageCount,
-      stage_messages: stageMessageCount,
-      updated_at: new Date().toISOString(),
-    }
+    const now = new Date().toISOString()
 
     if (completionData) {
-      updateData.completion_criteria = completionData
-    }
-
-    const { error } = await supabase
-      .from('kb_progress')
-      .update(updateData)
-      .eq('session_id', sessionId)
-
-    if (error) {
-      throw new Error(`更新KB进度失败: ${error.message}`)
+      await query(
+        `UPDATE ${TABLES.KB_PROGRESS}
+         SET total_messages = $1, stage_messages = $2, completion_criteria = $3, updated_at = $4
+         WHERE session_id = $5`,
+        [messageCount, stageMessageCount, JSON.stringify(completionData), now, sessionId]
+      )
+    } else {
+      await query(
+        `UPDATE ${TABLES.KB_PROGRESS}
+         SET total_messages = $1, stage_messages = $2, updated_at = $3
+         WHERE session_id = $4`,
+        [messageCount, stageMessageCount, now, sessionId]
+      )
     }
   }
 
@@ -220,13 +222,12 @@ export class KBEngine {
     sessionId: string,
     conversationHistory: Array<{ role: string; content: string; timestamp: Date }>,
   ): Promise<KBProgressAssessment> {
-    const { data: progress, error } = await supabase
-      .from('kb_progress')
-      .select('*')
-      .eq('session_id', sessionId)
-      .single()
+    const progress = await queryOne<KBProgress>(
+      `SELECT * FROM ${TABLES.KB_PROGRESS} WHERE session_id = $1`,
+      [sessionId]
+    )
 
-    if (error || !progress) {
+    if (!progress) {
       throw new Error('获取KB进度失败')
     }
 
@@ -278,13 +279,12 @@ export class KBEngine {
   }
 
   static async progressToNextStage(sessionId: string): Promise<KBStage | null> {
-    const { data: progress, error } = await supabase
-      .from('kb_progress')
-      .select('*')
-      .eq('session_id', sessionId)
-      .single()
+    const progress = await queryOne<KBProgress>(
+      `SELECT * FROM ${TABLES.KB_PROGRESS} WHERE session_id = $1`,
+      [sessionId]
+    )
 
-    if (error || !progress) {
+    if (!progress) {
       throw new Error('获取KB进度失败')
     }
 
@@ -295,37 +295,32 @@ export class KBEngine {
       return null
     }
 
-    const stageProgress = progress.stage_progress || {}
+    const stageProgress = (typeof progress.stage_progress === 'object' ? progress.stage_progress : {}) as Record<string, any>
+    const now = new Date().toISOString()
+
     stageProgress[currentStage] = {
       ...(stageProgress[currentStage] || {}),
       completed: true,
-      completedTime: new Date().toISOString(),
+      completedTime: now,
     }
     stageProgress[nextStage] = {
       ...(stageProgress[nextStage] || {}),
       started: true,
       completed: false,
-      startTime: new Date().toISOString(),
+      startTime: now,
     }
 
     const completedStages = Array.isArray(progress.completed_stages)
       ? Array.from(new Set([...progress.completed_stages, currentStage]))
       : [currentStage]
 
-    const { error: updateError } = await supabase
-      .from('kb_progress')
-      .update({
-        current_stage: nextStage,
-        stage_progress: stageProgress,
-        stage_messages: 0,
-        completed_stages: completedStages,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('session_id', sessionId)
-
-    if (updateError) {
-      throw new Error(`更新KB阶段失败: ${updateError.message}`)
-    }
+    await query(
+      `UPDATE ${TABLES.KB_PROGRESS}
+       SET current_stage = $1, stage_progress = $2, stage_messages = $3,
+           completed_stages = $4, updated_at = $5
+       WHERE session_id = $6`,
+      [nextStage, JSON.stringify(stageProgress), 0, JSON.stringify(completedStages), now, sessionId]
+    )
 
     return nextStage
   }

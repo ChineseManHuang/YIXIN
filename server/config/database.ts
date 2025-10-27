@@ -1,39 +1,52 @@
-﻿// Supabase server-side clients
-import { createClient } from '@supabase/supabase-js'
+// Direct PostgreSQL connection (replacing Supabase)
+import { Pool } from 'pg'
 
-const requireEnv = (key: 'SB_URL' | 'SB_SERVICE_ROLE_KEY' | 'SB_ANON_KEY'): string => {
-  const rawValue = process.env[key]
-  if (!rawValue || rawValue.trim() === '') {
-    throw new Error('[supabase] Missing required environment variable: ' + key)
-  }
-
-  const normalized = rawValue.trim()
-  process.env[key] = normalized
-  return normalized
-}
-
-requireEnv('SB_URL')
-requireEnv('SB_SERVICE_ROLE_KEY')
-const supabaseAnonKey = requireEnv('SB_ANON_KEY')
-
+// JSON types
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 export type JsonRecord = Record<string, JsonValue>
 
-export const supabaseAdmin = createClient(process.env.SB_URL!, process.env.SB_SERVICE_ROLE_KEY!, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
+// Database connection pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 })
 
-export const supabase = supabaseAdmin
-
-export const supabaseAnonClient = createClient(process.env.SB_URL!, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
+// Test connection on startup
+pool.on('connect', () => {
+  console.log('[database] Connected to PostgreSQL')
 })
+
+pool.on('error', (err) => {
+  console.error('[database] Unexpected error on idle client', err)
+})
+
+// Export pool for direct queries
+export const db = pool
+
+// Helper function for queries
+export async function query<T = any>(text: string, params?: any[]): Promise<T[]> {
+  const result = await pool.query(text, params)
+  return result.rows
+}
+
+// Helper function for single row queries
+export async function queryOne<T = any>(text: string, params?: any[]): Promise<T | null> {
+  const result = await pool.query(text, params)
+  return result.rows[0] || null
+}
+
+// Legacy exports for backward compatibility (these will be replaced gradually)
+export const supabase = {
+  from: (table: string) => {
+    console.warn(`[database] Direct Supabase client usage detected for table: ${table}. Consider using pg query instead.`)
+    throw new Error('Supabase client is no longer available. Use pg queries instead.')
+  }
+}
+export const supabaseAdmin = supabase
+export const supabaseAnonClient = supabase
 
 // 数据库表名常量
 export const TABLES = {
@@ -44,12 +57,15 @@ export const TABLES = {
   KB_PROGRESS: 'kb_progress',
   ETHICS_LOGS: 'ethics_logs',
   RESOURCES: 'resources',
+  USER_RESOURCE_ACCESS: 'user_resource_access',
+  VOICE_LOGS: 'voice_logs',
 } as const
 
 // 类型定义（与迁移脚本保持一致）
 export interface User {
   id: string
   email: string
+  password_hash: string
   created_at: string
   updated_at: string
 }
@@ -131,4 +147,3 @@ export interface EthicsCheckResult {
   confidence?: number
   detectedPatterns?: string[]
 }
-

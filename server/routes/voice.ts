@@ -6,7 +6,7 @@ import { voiceService, VoiceService } from '../services/voice.js'
 
 import { authenticateToken } from '../middleware/auth.js'
 
-import { supabase } from '../config/database.js'
+import { query, TABLES } from '../config/database.js'
 
 
 
@@ -150,29 +150,37 @@ router.post('/speech-to-text', authenticateToken, upload.single('audio'), async 
 
     try {
 
-      await supabase
+      await query(
 
-        .from('voice_logs')
+        `INSERT INTO ${TABLES.VOICE_LOGS}
 
-        .insert({
+         (user_id, action_type, input_size, output_text, confidence, duration, language, format, created_at)
 
-          user_id: userId,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 
-          action_type: 'speech_to_text',
+        [
 
-          input_size: audioFile.buffer.length,
+          userId,
 
-          output_text: result.text,
+          'speech_to_text',
 
-          confidence: result.confidence,
+          audioFile.buffer.length,
 
-          duration: result.duration,
+          result.text,
+
+          result.confidence,
+
+          result.duration,
 
           language,
 
-          format
+          format,
 
-        })
+          new Date().toISOString()
+
+        ]
+
+      )
 
     } catch (logError) {
 
@@ -306,29 +314,37 @@ router.post('/text-to-speech', authenticateToken, async (req: Request, res: Resp
 
     try {
 
-      await supabase
+      await query(
 
-        .from('voice_logs')
+        `INSERT INTO ${TABLES.VOICE_LOGS}
 
-        .insert({
+         (user_id, action_type, input_text, output_size, duration, language, voice_type, speed, created_at)
 
-          user_id: userId,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 
-          action_type: 'text_to_speech',
+        [
 
-          input_text: text,
+          userId,
 
-          output_size: result.audioBuffer?.length || 0,
+          'text_to_speech',
 
-          duration: result.duration,
+          text,
+
+          result.audioBuffer?.length || 0,
+
+          result.duration,
 
           language,
 
-          voice_type: voice,
+          voice,
 
-          speed
+          speed,
 
-        })
+          new Date().toISOString()
+
+        ]
+
+      )
 
     } catch (logError) {
 

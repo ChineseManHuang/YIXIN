@@ -1,12 +1,15 @@
-﻿/**
- * Auth routes
+/**
+ * Auth routes - PostgreSQL version (replacing Supabase Auth)
  */
 import { Router, type Request, type Response } from 'express'
-import { supabase, supabaseAnonClient } from '../config/database.js'
+import bcrypt from 'bcryptjs'
+import { v4 as uuidv4 } from 'uuid'
+import { db, query, queryOne, TABLES } from '../config/database.js'
 import { generateToken, authenticateToken } from '../middleware/auth.js'
 
 const router = Router()
 
+// Register new user
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   const conflictResponse = { success: false, error: 'User already exists with this email' }
 
@@ -21,6 +24,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const normalizedPassword = typeof password === 'string' ? password : ''
     const sanitizedFullName = typeof full_name === 'string' ? full_name.trim() : undefined
 
+    // Validation
     if (!normalizedEmail || !normalizedPassword) {
       res.status(400).json({ success: false, error: 'Email and password are required' })
       return
@@ -37,86 +41,58 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { data: existingUser, error: existingUserError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', normalizedEmail)
-      .maybeSingle()
-
-    if (existingUserError) {
-      console.error('Supabase user lookup error:', existingUserError)
-      res.status(500).json({ success: false, error: 'Failed to verify user availability' })
-      return
-    }
+    // Check if user already exists
+    const existingUser = await queryOne<{ id: string }>(
+      `SELECT id FROM ${TABLES.USERS} WHERE email = $1`,
+      [normalizedEmail]
+    )
 
     if (existingUser) {
       res.status(409).json(conflictResponse)
       return
     }
 
-    const { data: createdUser, error: createUserError } = await supabase.auth.admin.createUser({
-      email: normalizedEmail,
-      password: normalizedPassword,
-      email_confirm: true,
-    })
+    // Hash password
+    const saltRounds = 10
+    const passwordHash = await bcrypt.hash(normalizedPassword, saltRounds)
 
-    if (createUserError || !createdUser?.user) {
-      console.error('Supabase auth create user error:', createUserError)
-      const isDuplicate = createUserError?.status === 422
-      const isUnauthorized = createUserError?.status === 401 || createUserError?.code === 'PGRST301'
-      const status = isDuplicate ? 409 : isUnauthorized ? 500 : 500
-      const message = isUnauthorized
-        ? 'Supabase admin access denied. Verify SB_URL and SB_SERVICE_ROLE_KEY.'
-        : createUserError?.message || 'Failed to create user'
+    // Create user
+    const newUserId = uuidv4()
+    const now = new Date().toISOString()
 
-      res.status(status).json(
-        isDuplicate
-          ? conflictResponse
-          : { success: false, error: message }
-      )
-      return
-    }
+    await query(
+      `INSERT INTO ${TABLES.USERS} (id, email, password_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [newUserId, normalizedEmail, passwordHash, now, now]
+    )
 
-    const newUserId = createdUser.user.id
-
+    // Create user profile if full_name provided
     if (sanitizedFullName) {
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .insert({ user_id: newUserId, full_name: sanitizedFullName })
-
-      if (profileError) {
+      try {
+        await query(
+          `INSERT INTO ${TABLES.USER_PROFILES} (id, user_id, full_name, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [uuidv4(), newUserId, sanitizedFullName, now, now]
+        )
+      } catch (profileError) {
         console.error('User profile creation error:', profileError)
+        // Don't fail registration if profile creation fails
       }
     }
 
-    const { data: adminUser, error: adminUserError } = await supabase.auth.admin.getUserById(newUserId)
-    if (adminUserError) {
-      console.error('Supabase auth fetch user error:', adminUserError)
+    // Fetch created user
+    const dbUser = await queryOne<{ id: string; email: string; created_at: string }>(
+      `SELECT id, email, created_at FROM ${TABLES.USERS} WHERE id = $1`,
+      [newUserId]
+    )
+
+    const finalUser = dbUser ?? {
+      id: newUserId,
+      email: normalizedEmail,
+      created_at: now,
     }
 
-    const { data: dbUser, error: dbUserError } = await supabase
-      .from('users')
-      .select('id, email, created_at')
-      .eq('id', newUserId)
-      .maybeSingle()
-
-    if (dbUserError) {
-      console.error('Fetch user record error:', dbUserError)
-    }
-
-    const fallbackCreatedAt = createdUser.user.created_at ?? new Date().toISOString()
-    const finalUser = dbUser ?? (adminUser?.user
-      ? {
-          id: adminUser.user.id,
-          email: adminUser.user.email ?? normalizedEmail,
-          created_at: adminUser.user.created_at ?? fallbackCreatedAt,
-        }
-      : {
-          id: newUserId,
-          email: normalizedEmail,
-          created_at: fallbackCreatedAt,
-        })
-
+    // Generate JWT token
     let token: string
     try {
       token = generateToken(newUserId, finalUser.email)
@@ -140,6 +116,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   }
 })
 
+// Login user
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = (req.body ?? {}) as {
@@ -152,44 +129,44 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { data: authData, error: authError } = await supabaseAnonClient.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const normalizedEmail = email.trim().toLowerCase()
 
-    if (authError || !authData?.user) {
+    // Find user by email
+    const userRecord = await queryOne<{ id: string; email: string; password_hash: string; created_at: string }>(
+      `SELECT id, email, password_hash, created_at FROM ${TABLES.USERS} WHERE email = $1`,
+      [normalizedEmail]
+    )
+
+    if (!userRecord) {
       res.status(401).json({ success: false, error: 'Invalid email or password' })
       return
     }
 
-    const userId = authData.user.id
+    // Verify password
+    const passwordMatch = await bcrypt.compare(password, userRecord.password_hash)
 
-    const { data: userRecord, error: userError } = await supabase
-      .from('users')
-      .select('id, email, created_at')
-      .eq('id', userId)
-      .maybeSingle()
-
-    if (userError) {
-      console.error('Fetch user record error:', userError)
+    if (!passwordMatch) {
+      res.status(401).json({ success: false, error: 'Invalid email or password' })
+      return
     }
 
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('full_name, avatar_url')
-      .eq('user_id', userId)
-      .maybeSingle()
+    // Get user profile
+    const profile = await queryOne<{ full_name?: string; avatar_url?: string }>(
+      `SELECT full_name, avatar_url FROM ${TABLES.USER_PROFILES} WHERE user_id = $1`,
+      [userRecord.id]
+    )
 
-    const token = generateToken(userId, authData.user.email ?? email)
+    // Generate JWT token
+    const token = generateToken(userRecord.id, userRecord.email)
 
     res.json({
       success: true,
       message: 'Login successful',
       data: {
         user: {
-          id: userId,
-          email: authData.user.email ?? email,
-          created_at: userRecord?.created_at ?? authData.user.created_at ?? new Date().toISOString(),
+          id: userRecord.id,
+          email: userRecord.email,
+          created_at: userRecord.created_at,
           full_name: profile?.full_name,
           avatar_url: profile?.avatar_url,
         },
@@ -202,26 +179,35 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 })
 
+// Get current user info
 router.get('/me', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id
 
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id, email, created_at')
-      .eq('id', userId)
-      .single()
+    const user = await queryOne<{ id: string; email: string; created_at: string }>(
+      `SELECT id, email, created_at FROM ${TABLES.USERS} WHERE id = $1`,
+      [userId]
+    )
 
-    if (userError || !user) {
+    if (!user) {
       res.status(404).json({ success: false, error: 'User not found' })
       return
     }
 
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('full_name, avatar_url, phone, date_of_birth, gender, occupation, emergency_contact, preferences')
-      .eq('user_id', userId)
-      .single()
+    const profile = await queryOne<{
+      full_name?: string
+      avatar_url?: string
+      phone?: string
+      age?: number
+      gender?: string
+      occupation?: string
+      emergency_contact?: any
+      preferences?: any
+    }>(
+      `SELECT full_name, avatar_url, phone, age, gender, occupation, emergency_contact, preferences
+       FROM ${TABLES.USER_PROFILES} WHERE user_id = $1`,
+      [userId]
+    )
 
     res.json({
       success: true,
@@ -236,6 +222,7 @@ router.get('/me', authenticateToken, async (req: Request, res: Response): Promis
   }
 })
 
+// Logout (JWT is stateless, so this is mainly for client-side cleanup)
 router.post('/logout', authenticateToken, async (_req: Request, res: Response): Promise<void> => {
   try {
     res.json({ success: true, message: 'Logout successful' })
@@ -245,45 +232,43 @@ router.post('/logout', authenticateToken, async (_req: Request, res: Response): 
   }
 })
 
-router.get('/debug/supabase', async (_req: Request, res: Response): Promise<void> => {
+// Debug endpoint: test database connection
+router.get('/debug/db', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id')
-      .limit(1)
+    const result = await query<{ id: string }>(
+      `SELECT id FROM ${TABLES.USERS} LIMIT 1`
+    )
 
-    if (error) {
-      console.error('Supabase debug select error:', error)
-      res.status(500).json({ success: false, error: error.message || 'Supabase error' })
-      return
-    }
-
-    res.json({ success: true, data: data ?? [] })
+    res.json({ success: true, data: result ?? [] })
   } catch (error: unknown) {
-    console.error('Supabase debug runtime error:', error)
+    console.error('Database debug error:', error)
     const message = error instanceof Error ? error.message : 'Debug failed'
     res.status(500).json({ success: false, error: message })
   }
 })
 
+// Debug endpoint: test insert
 router.post('/debug/insert', async (_req: Request, res: Response): Promise<void> => {
   try {
     const email = `debug_${Date.now()}@example.com`
-    const { data, error } = await supabase
-      .from('users')
-      .insert({ email, password_hash: 'debug' })
-      .select('id, email, created_at')
-      .single()
+    const passwordHash = await bcrypt.hash('debug123', 10)
+    const userId = uuidv4()
+    const now = new Date().toISOString()
 
-    if (error) {
-      console.error('Supabase debug insert error:', error)
-      res.status(500).json({ success: false, error: error.message || 'Insert failed' })
-      return
-    }
+    await query(
+      `INSERT INTO ${TABLES.USERS} (id, email, password_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId, email, passwordHash, now, now]
+    )
 
-    res.status(201).json({ success: true, data })
+    const user = await queryOne<{ id: string; email: string; created_at: string }>(
+      `SELECT id, email, created_at FROM ${TABLES.USERS} WHERE id = $1`,
+      [userId]
+    )
+
+    res.status(201).json({ success: true, data: user })
   } catch (error: unknown) {
-    console.error('Supabase debug insert runtime error:', error)
+    console.error('Database debug insert error:', error)
     const message = error instanceof Error ? error.message : 'Debug insert failed'
     res.status(500).json({ success: false, error: message })
   }

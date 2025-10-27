@@ -1,4 +1,4 @@
-import { supabase } from '../config/database.js'
+import { query, TABLES } from '../config/database.js'
 import type { UserProfile } from '../config/database.js'
 
 // 风险等级定义
@@ -399,23 +399,33 @@ export class EthicsMonitor {
     result: EthicsMonitorResult
   ): Promise<void> {
     try {
-      await supabase.from('ethics_logs').insert({
-        session_id: sessionId,
-        user_id: userId,
-        message_content: messageContent,
-        risk_level: result.riskLevel,
-        risk_types: result.riskTypes,
-        concerns: result.concerns,
-        recommendations: result.recommendations,
-        confidence_score: result.confidence,
-        action_taken: result.shouldBlock ? 'blocked' : result.shouldAlert ? 'alerted' : 'monitored',
-        detected_patterns: result.detectedPatterns.map(p => ({
-          riskType: p.pattern.riskType,
-          matches: p.matches,
-          weight: p.pattern.weight,
-          contextScore: p.contextScore
-        }))
-      })
+      const actionTaken = result.shouldBlock ? 'blocked' : result.shouldAlert ? 'alerted' : 'monitored'
+      const detectedPatterns = JSON.stringify(result.detectedPatterns.map(p => ({
+        riskType: p.pattern.riskType,
+        matches: p.matches,
+        weight: p.pattern.weight,
+        contextScore: p.contextScore
+      })))
+
+      await query(
+        `INSERT INTO ${TABLES.ETHICS_LOGS}
+         (session_id, user_id, message_content, risk_level, risk_types, concerns,
+          recommendations, confidence_score, action_taken, detected_patterns, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          sessionId,
+          userId,
+          messageContent,
+          result.riskLevel,
+          JSON.stringify(result.riskTypes),
+          JSON.stringify(result.concerns),
+          JSON.stringify(result.recommendations),
+          result.confidence,
+          actionTaken,
+          detectedPatterns,
+          new Date().toISOString()
+        ]
+      )
     } catch (error: unknown) {
       console.error('记录伦理检查结果失败:', error)
     }

@@ -3,7 +3,8 @@
  * ����AI��ѯ�Ự�Ĵ�������ȡ�����µȹ���
  */
 import { Router, type Request, type Response } from 'express'
-import { supabase } from '../config/database.js'
+import { v4 as uuidv4 } from 'uuid'
+import { query, queryOne, TABLES } from '../config/database.js'
 import { authenticateToken } from '../middleware/auth.js'
 import { KBEngine } from '../services/kb-engine.js'
 
@@ -29,20 +30,23 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { data: session, error } = await supabase
-      .from('sessions')
-      .insert({
-        user_id: userId,
-        title: title.trim(),
-        status: 'active',
-        current_kb_step: 1,
-        session_data: {},
-      })
-      .select('*')
-      .single()
+    const sessionId = uuidv4()
+    const now = new Date().toISOString()
 
-    if (error || !session) {
-      console.error('Session creation error:', error)
+    await query(
+      `INSERT INTO ${TABLES.SESSIONS}
+       (id, user_id, title, status, current_kb_step, session_data, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [sessionId, userId, title.trim(), 'active', 1, '{}', now, now]
+    )
+
+    const session = await queryOne<any>(
+      `SELECT * FROM ${TABLES.SESSIONS} WHERE id = $1`,
+      [sessionId]
+    )
+
+    if (!session) {
+      console.error('Session creation error: Failed to retrieve created session')
       res.status(500).json({
         success: false,
         error: 'Failed to create session',
@@ -80,27 +84,18 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.id
     const { status, limit = 20, offset = 0 } = req.query
 
-    let query = supabase
-      .from('sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false })
-      .range(Number(offset), Number(offset) + Number(limit) - 1)
+    let sql = `SELECT * FROM ${TABLES.SESSIONS} WHERE user_id = $1`
+    const params: any[] = [userId]
 
     if (status) {
-      query = query.eq('status', status)
+      sql += ` AND status = $2`
+      params.push(status)
     }
 
-    const { data: sessions, error } = await query
+    sql += ` ORDER BY updated_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+    params.push(Number(limit), Number(offset))
 
-    if (error) {
-      console.error('Get sessions error:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Failed to fetch sessions',
-      })
-      return
-    }
+    const sessions = await query<any>(sql, params)
 
     res.json({
       success: true,
@@ -124,14 +119,12 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params
     const userId = req.user!.id
 
-    const { data: session, error: sessionError } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single()
+    const session = await queryOne<any>(
+      `SELECT * FROM ${TABLES.SESSIONS} WHERE id = $1 AND user_id = $2`,
+      [id, userId]
+    )
 
-    if (sessionError || !session) {
+    if (!session) {
       res.status(404).json({
         success: false,
         error: 'Session not found',
@@ -139,26 +132,16 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { data: kbProgress, error: kbError } = await supabase
-      .from('kb_progress')
-      .select('*')
-      .eq('session_id', id)
-      .single()
+    const kbProgress = await queryOne<any>(
+      `SELECT * FROM ${TABLES.KB_PROGRESS} WHERE session_id = $1`,
+      [id]
+    )
 
-    if (kbError) {
-      console.error('Get KB progress error:', kbError)
-    }
-
-    const { data: messages, error: messagesError } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('session_id', id)
-      .order('created_at', { ascending: false })
-      .limit(50)
-
-    if (messagesError) {
-      console.error('Get messages error:', messagesError)
-    }
+    const messages = await query<any>(
+      `SELECT * FROM ${TABLES.MESSAGES} WHERE session_id = $1
+       ORDER BY created_at DESC LIMIT 50`,
+      [id]
+    )
 
     res.json({
       success: true,
@@ -187,14 +170,12 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.id
     const { title, status, current_kb_step, session_data } = req.body
 
-    const { data: existingSession, error: checkError } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single()
+    const existingSession = await queryOne<any>(
+      `SELECT id FROM ${TABLES.SESSIONS} WHERE id = $1 AND user_id = $2`,
+      [id, userId]
+    )
 
-    if (checkError || !existingSession) {
+    if (!existingSession) {
       res.status(404).json({
         success: false,
         error: 'Session not found',
@@ -202,13 +183,28 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const updateData: Record<string, unknown> = {}
-    if (title !== undefined) updateData.title = title
-    if (status !== undefined) updateData.status = status
-    if (current_kb_step !== undefined) updateData.current_kb_step = current_kb_step
-    if (session_data !== undefined) updateData.session_data = session_data
+    const updates: string[] = []
+    const values: any[] = []
+    let paramIndex = 1
 
-    if (Object.keys(updateData).length === 0) {
+    if (title !== undefined) {
+      updates.push(`title = $${paramIndex++}`)
+      values.push(title)
+    }
+    if (status !== undefined) {
+      updates.push(`status = $${paramIndex++}`)
+      values.push(status)
+    }
+    if (current_kb_step !== undefined) {
+      updates.push(`current_kb_step = $${paramIndex++}`)
+      values.push(current_kb_step)
+    }
+    if (session_data !== undefined) {
+      updates.push(`session_data = $${paramIndex++}`)
+      values.push(JSON.stringify(session_data))
+    }
+
+    if (updates.length === 0) {
       res.json({
         success: true,
         message: 'No changes applied',
@@ -217,15 +213,22 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { data: updatedSession, error } = await supabase
-      .from('sessions')
-      .update(updateData)
-      .eq('id', id)
-      .select('*')
-      .single()
+    updates.push(`updated_at = $${paramIndex++}`)
+    values.push(new Date().toISOString())
+    values.push(id)
 
-    if (error) {
-      console.error('Update session error:', error)
+    await query(
+      `UPDATE ${TABLES.SESSIONS} SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+      values
+    )
+
+    const updatedSession = await queryOne<any>(
+      `SELECT * FROM ${TABLES.SESSIONS} WHERE id = $1`,
+      [id]
+    )
+
+    if (!updatedSession) {
+      console.error('Update session error: Failed to retrieve updated session')
       res.status(500).json({
         success: false,
         error: 'Failed to update session',
@@ -256,14 +259,12 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params
     const userId = req.user!.id
 
-    const { data: existingSession, error: checkError } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .single()
+    const existingSession = await queryOne<any>(
+      `SELECT id FROM ${TABLES.SESSIONS} WHERE id = $1 AND user_id = $2`,
+      [id, userId]
+    )
 
-    if (checkError || !existingSession) {
+    if (!existingSession) {
       res.status(404).json({
         success: false,
         error: 'Session not found',
@@ -271,19 +272,10 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { error } = await supabase
-      .from('sessions')
-      .delete()
-      .eq('id', id)
-
-    if (error) {
-      console.error('Delete session error:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Failed to delete session',
-      })
-      return
-    }
+    await query(
+      `DELETE FROM ${TABLES.SESSIONS} WHERE id = $1`,
+      [id]
+    )
 
     res.json({
       success: true,

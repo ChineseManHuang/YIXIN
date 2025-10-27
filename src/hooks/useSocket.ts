@@ -45,6 +45,10 @@ export const useSocket = (options: UseSocketOptions = {}) => {
     }
 
     setSocketState(prev => ({ ...prev, isConnecting: true, error: null }))
+
+    // 首次使用时初始化socket连接
+    socketClient.connect()
+
     socketClient.join(user.id, sessionId)
   }, [user?.id, sessionId])
 

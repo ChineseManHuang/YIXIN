@@ -46,8 +46,20 @@ class SocketClient {
   private maxReconnectAttempts = 5
   private reconnectDelay = 1000
   private eventListeners: Map<string, EventCallback[]> = new Map()
+  private isInitialized = false
 
   constructor() {
+    // 不自动连接,等待手动调用 connect()
+  }
+
+  // 手动连接 WebSocket
+  public connect() {
+    if (this.isInitialized) {
+      console.warn('Socket already initialized')
+      return
+    }
+
+    this.isInitialized = true
     this.setupSocket()
   }
 
@@ -58,9 +70,11 @@ class SocketClient {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       forceNew: true,
+      autoConnect: false, // 不自动连接
     })
 
     this.setupEventHandlers()
+    this.socket.connect() // 手动触发连接
   }
 
   private resolveSocketUrl(): string {

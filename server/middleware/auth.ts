@@ -1,6 +1,6 @@
 ﻿import { Request, Response, NextFunction } from 'express'
 import jwt, { type JwtPayload } from 'jsonwebtoken'
-import { supabase } from '../config/database.js'
+import { queryOne, TABLES } from '../config/database.js'
 import { env } from '../config/env.js'
 
 declare module 'express-serve-static-core' {
@@ -58,16 +58,15 @@ export const authenticateToken = async (
       return
     }
 
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id, email')
-      .eq('id', decoded.userId)
-      .single()
+    const user = await queryOne<{ id: string; email: string }>(
+      `SELECT id, email FROM ${TABLES.USERS} WHERE id = $1`,
+      [decoded.userId]
+    )
 
-    if (userError || !user) {
+    if (!user) {
       res.status(401).json({
         success: false,
-        error: userError?.message || 'Invalid token or user not found',
+        error: 'Invalid token or user not found',
       })
       return
     }
@@ -124,13 +123,12 @@ export const optionalAuth = async (
       return
     }
 
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id, email')
-      .eq('id', decoded.userId)
-      .single()
+    const user = await queryOne<{ id: string; email: string }>(
+      `SELECT id, email FROM ${TABLES.USERS} WHERE id = $1`,
+      [decoded.userId]
+    )
 
-    if (!userError && user) {
+    if (user) {
       req.user = {
         id: user.id,
         email: user.email,

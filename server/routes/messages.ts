@@ -3,7 +3,8 @@
  * 处理AI咨询对话中的消息发送、接收、历史记录等功能
  */
 import { Router, type Request, type Response } from 'express'
-import { supabase, type KBProgress } from '../config/database.js'
+import { v4 as uuidv4 } from 'uuid'
+import { query, queryOne, TABLES, type KBProgress } from '../config/database.js'
 import { authenticateToken } from '../middleware/auth.js'
 import { bailianService } from '../services/bailian.js'
 import type { CounselingResponse, UsageStats, EthicsCheckResult } from '../services/bailian.js'
@@ -95,14 +96,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const trimmedContent = rawContent.trim()
 
     // 验证会话所有权
-    const { data: sessionRecord, error: sessionError } = await supabase
-      .from('sessions')
-      .select('id, status, title, current_kb_step')
-      .eq('id', sessionId)
-      .eq('user_id', userId)
-      .single()
+    const sessionRecord = await queryOne<any>(
+      `SELECT id, status, title, current_kb_step FROM ${TABLES.SESSIONS}
+       WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId]
+    )
 
-    if (sessionError || !sessionRecord) {
+    if (!sessionRecord) {
       res.status(404).json({
         success: false,
         error: 'Session not found or access denied',
@@ -119,20 +119,23 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     // 保存用户消息
-    const { data: userMessage, error: userMessageError } = await supabase
-      .from('messages')
-      .insert({
-        session_id: sessionId,
-        sender_type: 'user',
-        content: trimmedContent,
-        message_type: messageType,
-        metadata,
-      })
-      .select('*')
-      .single()
+    const userMessageId = uuidv4()
+    const now = new Date().toISOString()
 
-    if (userMessageError || !userMessage) {
-      console.error('Save user message error:', userMessageError)
+    await query(
+      `INSERT INTO ${TABLES.MESSAGES}
+       (id, session_id, sender_type, content, message_type, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [userMessageId, sessionId, 'user', trimmedContent, messageType, JSON.stringify(metadata), now]
+    )
+
+    const userMessage = await queryOne<any>(
+      `SELECT * FROM ${TABLES.MESSAGES} WHERE id = $1`,
+      [userMessageId]
+    )
+
+    if (!userMessage) {
+      console.error('Save user message error: Failed to retrieve saved message')
       res.status(500).json({
         success: false,
         error: 'Failed to save message',
@@ -141,26 +144,15 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     // 获取会话和用户信息
-    const { data: sessionData, error: sessionDataError } = await supabase
-      .from('sessions')
-      .select(`
-        *,
-        users!inner (
-          id,
-          email,
-          user_profiles (
-            full_name,
-            age,
-            gender,
-            occupation
-          )
-        )
-      `)
-      .eq('id', sessionId)
-      .eq('user_id', userId)
-      .single()
+    const sessionData = await queryOne<any>(
+      `SELECT s.*, u.id as user_id, u.email as user_email
+       FROM ${TABLES.SESSIONS} s
+       INNER JOIN ${TABLES.USERS} u ON s.user_id = u.id
+       WHERE s.id = $1 AND s.user_id = $2`,
+      [sessionId, userId]
+    )
 
-    if (sessionDataError || !sessionData) {
+    if (!sessionData) {
       res.status(404).json({
         success: false,
         error: 'Session not found or access denied',
@@ -168,21 +160,26 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const sessionWithUser = sessionData as SessionWithUserProfile
+    const userProfiles = await query<any>(
+      `SELECT full_name, age, gender, occupation FROM ${TABLES.USER_PROFILES}
+       WHERE user_id = $1`,
+      [userId]
+    )
+
+    const sessionWithUser = {
+      ...sessionData,
+      users: {
+        id: sessionData.user_id,
+        email: sessionData.user_email,
+        user_profiles: userProfiles
+      }
+    } as SessionWithUserProfile
 
     // 获取或初始化 KB 进度
-    let kbProgress: KBProgress | null = null
-    const { data: kbProgressRecord, error: kbProgressError } = await supabase
-      .from('kb_progress')
-      .select('*')
-      .eq('session_id', sessionId)
-      .single()
-
-    if (kbProgressRecord) {
-      kbProgress = kbProgressRecord
-    } else if (kbProgressError && kbProgressError.code !== 'PGRST116') {
-      console.error('Get KB progress error:', kbProgressError)
-    }
+    let kbProgress: KBProgress | null = await queryOne<KBProgress>(
+      `SELECT * FROM ${TABLES.KB_PROGRESS} WHERE session_id = $1`,
+      [sessionId]
+    )
 
     if (!kbProgress) {
       try {
@@ -193,16 +190,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     // 获取对话历史（包含最新用户消息）
-    const { data: historyData, error: historyError } = await supabase
-      .from('messages')
-      .select('sender_type, content, created_at')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true })
-      .limit(20)
-
-    if (historyError) {
-      console.error('Load conversation history error:', historyError)
-    }
+    const historyData = await query<any>(
+      `SELECT sender_type, content, created_at FROM ${TABLES.MESSAGES}
+       WHERE session_id = $1
+       ORDER BY created_at ASC
+       LIMIT 20`,
+      [sessionId]
+    )
 
     const conversationHistory = (historyData || []).map((msg) => ({
       role: msg.sender_type === 'user' ? ('user' as const) : ('assistant' as const),
@@ -323,20 +317,23 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     // 保存 AI 回复
-    const { data: aiMessage, error: aiMessageError } = await supabase
-      .from('messages')
-      .insert({
-        session_id: sessionId,
-        sender_type: 'ai',
-        content: aiResponse.content,
-        message_type: aiResponse.type,
-        metadata: aiResponse.metadata,
-      })
-      .select('*')
-      .single()
+    const aiMessageId = uuidv4()
+    const aiMessageTime = new Date().toISOString()
 
-    if (aiMessageError || !aiMessage) {
-      console.error('Save AI message error:', aiMessageError)
+    await query(
+      `INSERT INTO ${TABLES.MESSAGES}
+       (id, session_id, sender_type, content, message_type, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [aiMessageId, sessionId, 'ai', aiResponse.content, aiResponse.type, JSON.stringify(aiResponse.metadata), aiMessageTime]
+    )
+
+    const aiMessage = await queryOne<any>(
+      `SELECT * FROM ${TABLES.MESSAGES} WHERE id = $1`,
+      [aiMessageId]
+    )
+
+    if (!aiMessage) {
+      console.error('Save AI message error: Failed to retrieve saved message')
       res.status(500).json({
         success: false,
         error: 'Failed to save AI response',
@@ -344,10 +341,10 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    await supabase
-      .from('sessions')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', sessionId)
+    await query(
+      `UPDATE ${TABLES.SESSIONS} SET updated_at = $1 WHERE id = $2`,
+      [new Date().toISOString(), sessionId]
+    )
 
     res.status(201).json({
       success: true,
@@ -378,12 +375,10 @@ router.get('/:sessionId', async (req: Request, res: Response): Promise<void> => 
     const { limit = 50, offset = 0, before_id } = req.query
     const userId = req.user!.id
 
-    const { data: session } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('id', sessionId)
-      .eq('user_id', userId)
-      .single()
+    const session = await queryOne<any>(
+      `SELECT id FROM ${TABLES.SESSIONS} WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId]
+    )
 
     if (!session) {
       res.status(404).json({
@@ -393,35 +388,25 @@ router.get('/:sessionId', async (req: Request, res: Response): Promise<void> => 
       return
     }
 
-    let query = supabase
-      .from('messages')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: false })
-      .range(Number(offset), Number(offset) + Number(limit) - 1)
+    let sql = `SELECT * FROM ${TABLES.MESSAGES} WHERE session_id = $1`
+    const params: any[] = [sessionId]
 
     if (before_id) {
-      const { data: beforeMessage } = await supabase
-        .from('messages')
-        .select('created_at')
-        .eq('id', before_id)
-        .single()
+      const beforeMessage = await queryOne<any>(
+        `SELECT created_at FROM ${TABLES.MESSAGES} WHERE id = $1`,
+        [before_id]
+      )
 
       if (beforeMessage) {
-        query = query.lt('created_at', beforeMessage.created_at)
+        sql += ` AND created_at < $${params.length + 1}`
+        params.push(beforeMessage.created_at)
       }
     }
 
-    const { data: messages, error } = await query
+    sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+    params.push(Number(limit), Number(offset))
 
-    if (error) {
-      console.error('Get messages error:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Failed to fetch messages',
-      })
-      return
-    }
+    const messages = await query<any>(sql, params)
 
     const sortedMessages = messages?.slice().reverse() || []
 
@@ -450,23 +435,15 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params
     const userId = req.user!.id
 
-    const { data: message, error: messageError } = await supabase
-      .from('messages')
-      .select(`
-        id,
-        sessions!inner(
-          user_id
-        )
-      `)
-      .eq('id', id)
-      .single()
+    const message = await queryOne<any>(
+      `SELECT m.id, s.user_id
+       FROM ${TABLES.MESSAGES} m
+       INNER JOIN ${TABLES.SESSIONS} s ON m.session_id = s.id
+       WHERE m.id = $1`,
+      [id]
+    )
 
-    const sessions = (message as { sessions?: { user_id?: string } | Array<{ user_id?: string }> } | null)?.sessions
-    const ownerUserId = Array.isArray(sessions)
-      ? sessions[0]?.user_id
-      : (sessions as { user_id?: string } | undefined)?.user_id
-
-    if (messageError || !message || ownerUserId !== userId) {
+    if (!message || message.user_id !== userId) {
       res.status(404).json({
         success: false,
         error: 'Message not found or access denied',
@@ -474,19 +451,10 @@ router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const { error } = await supabase
-      .from('messages')
-      .delete()
-      .eq('id', id)
-
-    if (error) {
-      console.error('Delete message error:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Failed to delete message',
-      })
-      return
-    }
+    await query(
+      `DELETE FROM ${TABLES.MESSAGES} WHERE id = $1`,
+      [id]
+    )
 
     res.json({
       success: true,
@@ -520,14 +488,13 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
     }
 
     // 验证会话所有权
-    const { data: sessionRecord, error: sessionError } = await supabase
-      .from('sessions')
-      .select('id, status, current_kb_step')
-      .eq('id', session_id)
-      .eq('user_id', userId)
-      .single()
+    const sessionRecord = await queryOne<any>(
+      `SELECT id, status, current_kb_step FROM ${TABLES.SESSIONS}
+       WHERE id = $1 AND user_id = $2`,
+      [session_id, userId]
+    )
 
-    if (sessionError || !sessionRecord) {
+    if (!sessionRecord) {
       res.status(404).json({
         success: false,
         error: 'Session not found or access denied'
@@ -544,24 +511,13 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
     }
 
     // 获取会话完整信息
-    const { data: sessionData } = await supabase
-      .from('sessions')
-      .select(`
-        *,
-        users!inner (
-          id,
-          email,
-          user_profiles (
-            full_name,
-            age,
-            gender,
-            occupation
-          )
-        )
-      `)
-      .eq('id', session_id)
-      .eq('user_id', userId)
-      .single()
+    const sessionData = await queryOne<any>(
+      `SELECT s.*, u.id as user_id, u.email as user_email
+       FROM ${TABLES.SESSIONS} s
+       INNER JOIN ${TABLES.USERS} u ON s.user_id = u.id
+       WHERE s.id = $1 AND s.user_id = $2`,
+      [session_id, userId]
+    )
 
     if (!sessionData) {
       res.status(404).json({
@@ -571,19 +527,28 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
       return
     }
 
-    const sessionWithUser = sessionData as SessionWithUserProfile
+    const userProfiles = await query<any>(
+      `SELECT full_name, age, gender, occupation FROM ${TABLES.USER_PROFILES}
+       WHERE user_id = $1`,
+      [userId]
+    )
+
+    const sessionWithUser = {
+      ...sessionData,
+      users: {
+        id: sessionData.user_id,
+        email: sessionData.user_email,
+        user_profiles: userProfiles
+      }
+    } as SessionWithUserProfile
 
     // 获取KB进度
-    let kbProgress: KBProgress | null = null
-    const { data: kbProgressRecord } = await supabase
-      .from('kb_progress')
-      .select('*')
-      .eq('session_id', session_id)
-      .single()
+    let kbProgress: KBProgress | null = await queryOne<KBProgress>(
+      `SELECT * FROM ${TABLES.KB_PROGRESS} WHERE session_id = $1`,
+      [session_id]
+    )
 
-    if (kbProgressRecord) {
-      kbProgress = kbProgressRecord
-    } else {
+    if (!kbProgress) {
       try {
         kbProgress = await KBEngine.initializeKBProgress(session_id, userId)
       } catch (error) {
@@ -592,12 +557,13 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
     }
 
     // 获取对话历史
-    const { data: historyData } = await supabase
-      .from('messages')
-      .select('sender_type, content, created_at')
-      .eq('session_id', session_id)
-      .order('created_at', { ascending: true })
-      .limit(20)
+    const historyData = await query<any>(
+      `SELECT sender_type, content, created_at FROM ${TABLES.MESSAGES}
+       WHERE session_id = $1
+       ORDER BY created_at ASC
+       LIMIT 20`,
+      [session_id]
+    )
 
     const conversationHistory = (historyData || []).map(msg => ({
       role: msg.sender_type === 'user' ? ('user' as const) : ('assistant' as const),
@@ -658,20 +624,31 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
     }
 
     // 保存用户消息(语音转文字后的内容)
-    const { data: userMessage } = await supabase
-      .from('messages')
-      .insert({
-        session_id: session_id,
-        sender_type: 'user',
-        content: userTranscript,
-        message_type: message_type,
-        metadata: {
+    const userMessageId = uuidv4()
+    const userMessageTime = new Date().toISOString()
+
+    await query(
+      `INSERT INTO ${TABLES.MESSAGES}
+       (id, session_id, sender_type, content, message_type, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        userMessageId,
+        session_id,
+        'user',
+        userTranscript,
+        message_type,
+        JSON.stringify({
           audio_format: audioFile.mimetype,
           audio_size: audioFile.size
-        }
-      })
-      .select('*')
-      .single()
+        }),
+        userMessageTime
+      ]
+    )
+
+    const userMessage = await queryOne<any>(
+      `SELECT * FROM ${TABLES.MESSAGES} WHERE id = $1`,
+      [userMessageId]
+    )
 
     if (!userMessage) {
       res.status(500).json({
@@ -682,22 +659,33 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
     }
 
     // 保存AI回复
-    const { data: aiMessage } = await supabase
-      .from('messages')
-      .insert({
-        session_id: session_id,
-        sender_type: 'ai',
-        content: aiResponseText,
-        message_type: 'audio',
-        metadata: {
+    const aiMessageId = uuidv4()
+    const aiMessageTime = new Date().toISOString()
+
+    await query(
+      `INSERT INTO ${TABLES.MESSAGES}
+       (id, session_id, sender_type, content, message_type, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        aiMessageId,
+        session_id,
+        'ai',
+        aiResponseText,
+        'audio',
+        JSON.stringify({
           kb_stage: context.kbStage,
           has_audio: !!aiAudioBase64,
           ethics_check: ethicsCheck,
           usage: usage
-        }
-      })
-      .select('*')
-      .single()
+        }),
+        aiMessageTime
+      ]
+    )
+
+    const aiMessage = await queryOne<any>(
+      `SELECT * FROM ${TABLES.MESSAGES} WHERE id = $1`,
+      [aiMessageId]
+    )
 
     if (!aiMessage) {
       res.status(500).json({
@@ -708,10 +696,10 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
     }
 
     // 更新会话时间
-    await supabase
-      .from('sessions')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', session_id)
+    await query(
+      `UPDATE ${TABLES.SESSIONS} SET updated_at = $1 WHERE id = $2`,
+      [new Date().toISOString(), session_id]
+    )
 
     res.status(201).json({
       success: true,
