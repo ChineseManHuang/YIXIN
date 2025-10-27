@@ -93,9 +93,9 @@ export const env = {
 }
 
 if (env.IS_PRODUCTION) {
+  // After migrating to RDS PostgreSQL, Supabase variables are no longer required
+  // Only JWT_SECRET is required for user authentication
   const requiredKeys: Array<keyof typeof env> = [
-    'SB_URL',
-    'SB_SERVICE_ROLE_KEY',
     'JWT_SECRET',
   ]
 
