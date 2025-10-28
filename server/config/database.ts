@@ -8,7 +8,7 @@ export type JsonRecord = Record<string, JsonValue>
 // Database connection pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  ssl: false, // RDS instance does not have SSL enabled
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
