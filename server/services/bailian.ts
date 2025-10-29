@@ -15,7 +15,9 @@ interface CounselingContext {
   sessionId: string
   userId: string
   kbStage: 'KB-01' | 'KB-02' | 'KB-03' | 'KB-04' | 'KB-05'
+  bailianSessionId?: string  // 百炼session_id（用于多轮对话）
   userProfile?: {
+    fullName?: string  // 添加fullName字段
     age?: number
     gender?: string
     occupation?: string
@@ -49,6 +51,7 @@ export interface EthicsCheckResult {
 
 export interface CounselingResponse {
   response: string
+  bailianSessionId?: string  // 百炼智能体session_id（用于多轮对话）
   ethicsCheck: EthicsCheckResult
   usage: UsageStats
   [key: string]: unknown
@@ -56,6 +59,7 @@ export interface CounselingResponse {
 
 class BailianService {
   private client: AxiosInstance
+  private readonly appId: string
   private readonly textModel = 'qwen-turbo'
   private readonly voiceModel = 'qwen3-omni-flash-realtime'
   private readonly baseURL: string
@@ -64,8 +68,9 @@ class BailianService {
   constructor() {
     this.baseURL = env.BAILIAN_ENDPOINT || ''
     this.apiKey = env.BAILIAN_API_KEY || ''
-    
-    const hasConfig = this.baseURL && this.apiKey
+    this.appId = env.BAILIAN_APP_ID || ''
+
+    const hasConfig = this.baseURL && this.apiKey && this.appId
     
     if (hasConfig) {
       this.client = axios.create({
@@ -102,7 +107,7 @@ class BailianService {
         }
       )
     } else {
-      console.warn('[百炼API] 配置缺失，将使用模拟响应')
+      console.warn('[百炼API] 配置缺失（需要 APP_ID, API_KEY），将使用模拟响应')
       this.client = null
     }
   }
@@ -131,46 +136,47 @@ class BailianService {
         }
       }
 
-      // 2. 构建系统提示词
-      const systemPrompt = this.buildSystemPrompt(context)
-      
-      // 3. 构建消息历史
-      const messages = this.buildMessageHistory(context, userMessage, systemPrompt)
-      
-      // 4. 调用百炼API
+      // 2. 构建业务参数（用于参数透传到系统提示词）
+      const bizParams = this.buildBizParams(context)
+
+      // 3. 获取或创建 session_id（用于多轮对话）
+      const bailianSessionId = (context as any).bailianSessionId || undefined
+
+      // 4. 调用智能体应用API
       const request = {
-        model: 'qwen-turbo',
         input: {
-          messages: messages
+          prompt: userMessage,
+          session_id: bailianSessionId,  // 云端存储对话历史
+          biz_params: bizParams  // 业务参数透传
         },
         parameters: {
-          temperature: 0.7,
-          max_tokens: 1000,
-          top_p: 0.9,
-          result_format: 'message'
-        }
+          // 可选参数，使用应用配置的默认值
+        },
+        debug: {}
       }
 
-      console.log('[百炼服务] 发送请求:', {
-        url: '/api/v1/services/aigc/text-generation/generation',
+      console.log('[百炼服务] 发送请求到智能体应用:', {
+        url: `/api/v1/apps/${this.appId}/completion`,
         body: request
       })
 
-      const response = await this.client.post('/api/v1/services/aigc/text-generation/generation', request)
-      
-      console.log('[百炼服务] API响应:', response.data)
-      
-      if (!response.data.output || !response.data.output.choices || response.data.output.choices.length === 0) {
-        throw new Error('Bailian API returned empty response')
+      const response = await this.client.post(`/api/v1/apps/${this.appId}/completion`, request)
+
+      console.log('[百炼服务] 智能体API响应:', response.data)
+
+      if (!response.data.output || !response.data.output.text) {
+        throw new Error('Bailian Agent API returned empty response')
       }
 
-      const aiResponse = response.data.output.choices[0].message.content
-      
+      const aiResponse = response.data.output.text
+      const newSessionId = response.data.output.session_id
+
       // 5. 后处理和安全检查
       const processedResponse = await this.postProcessResponse(aiResponse, context)
-      
+
       return {
         response: processedResponse,
+        bailianSessionId: newSessionId,  // 返回百炼session_id供后续使用
         ethicsCheck,
         usage: {
           prompt_tokens: response.data.usage?.input_tokens || 0,
@@ -211,6 +217,22 @@ class BailianService {
         completion_tokens: 50,
         total_tokens: userMessage.length + 50
       }
+    }
+  }
+
+  /**
+   * 构建业务参数（用于参数透传到系统提示词）
+   */
+  private buildBizParams(context: CounselingContext): Record<string, string> {
+    const { userId, userProfile, conversationHistory } = context
+    const kbStage = context.kbStage || 'KB-01'
+
+    return {
+      user_id: userId,
+      full_name: userProfile?.fullName || userProfile?.occupation || '用户',
+      session_id: context.sessionId,
+      session_count: String(userProfile?.previousSessions || 0),
+      current_stage: kbStage
     }
   }
 

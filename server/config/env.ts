@@ -84,6 +84,7 @@ export const env = {
         : 'http://localhost:5173,http://localhost:3000',
     }),
   ),
+  BAILIAN_APP_ID: getEnvValue('BAILIAN_APP_ID'),
   BAILIAN_API_KEY: getEnvValue('BAILIAN_API_KEY'),
   BAILIAN_ENDPOINT: getEnvValue('BAILIAN_ENDPOINT'),
   ALIBABA_VOICE_API_KEY: getEnvValue('ALIBABA_VOICE_API_KEY'),

@@ -143,7 +143,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    // 获取会话和用户信息
+    // 获取会话和用户信息（包含bailian_session_id）
     const sessionData = await queryOne<any>(
       `SELECT s.*, u.id as user_id, u.email as user_email
        FROM ${TABLES.SESSIONS} s
@@ -210,8 +210,10 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       sessionId: sessionId,
       userId,
       kbStage: (kbProgress?.current_stage || 'KB-01') as 'KB-01' | 'KB-02' | 'KB-03' | 'KB-04' | 'KB-05',
+      bailianSessionId: sessionData.bailian_session_id || undefined,  // 传递百炼session_id
       userProfile: primaryProfile
         ? {
+            fullName: primaryProfile.full_name,
             age: primaryProfile.age,
             gender: primaryProfile.gender,
             occupation: primaryProfile.occupation,
@@ -247,6 +249,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     let aiResponse: GeneratedResponse
     let ethicsCheck: EthicsCheckResult | null = null
     let usage: UsageStats | null = null
+    let newBailianSessionId: string | undefined = undefined
 
     try {
       const result: CounselingResponse = await bailianService.generateCounselingResponse(context, trimmedContent)
@@ -262,6 +265,16 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       }
       ethicsCheck = result.ethicsCheck
       usage = result.usage
+      newBailianSessionId = result.bailianSessionId  // 获取百炼返回的session_id
+
+      // 如果获得了新的百炼session_id，保存到数据库
+      if (newBailianSessionId && newBailianSessionId !== sessionData.bailian_session_id) {
+        await query(
+          `UPDATE ${TABLES.SESSIONS} SET bailian_session_id = $1, updated_at = NOW() WHERE id = $2`,
+          [newBailianSessionId, sessionId]
+        )
+        console.log('[百炼集成] 保存session_id:', newBailianSessionId)
+      }
 
       if (ethicsCheck && (ethicsCheck.riskLevel !== 'low' || ethicsCheck.concerns.length > 0)) {
         const monitorResult = EthicsMonitor.analyzeMessage(trimmedContent, {
