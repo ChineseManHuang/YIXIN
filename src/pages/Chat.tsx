@@ -6,6 +6,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../lib/auth-store'
 import { api } from '../lib/api'
+import type { Message as ApiMessage, Session as ApiSession } from '../lib/api'
 import { useSocket, useTypingIndicator } from '../hooks/useSocket'
 import VoiceRecorder from '../components/VoiceRecorder'
 import VoicePlayer from '../components/VoicePlayer'
@@ -21,7 +22,7 @@ import {
   Loader2
 } from 'lucide-react'
 
-interface Message {
+type ChatMessage = {
   id: string
   content: string
   role: 'user' | 'assistant'
@@ -29,21 +30,34 @@ interface Message {
   session_id: string
 }
 
-interface Session {
-  id: string
-  title: string
-  status: 'active' | 'completed' | 'paused'
-  created_at: string
-  updated_at: string
+const ensureIsoTimestamp = (value?: string): string => {
+  if (!value) {
+    return new Date().toISOString()
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toISOString()
+  }
+
+  return parsed.toISOString()
 }
+
+const mapApiMessage = (message: ApiMessage): ChatMessage => ({
+  id: message.id,
+  content: message.content ?? '',
+  role: message.sender_type === 'user' ? 'user' : 'assistant',
+  timestamp: ensureIsoTimestamp(message.created_at),
+  session_id: message.session_id,
+})
 
 const Chat: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
   const { isAuthenticated } = useAuthStore()
   
-  const [session, setSession] = useState<Session | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
+  const [session, setSession] = useState<ApiSession | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
@@ -92,7 +106,7 @@ const Chat: React.FC = () => {
         // 加载消息历史
         const messagesResponse = await api.messages.list(sessionId)
         if (messagesResponse.success && messagesResponse.data) {
-          setMessages(messagesResponse.data.messages)
+          setMessages(messagesResponse.data.messages.map(mapApiMessage))
         }
       } catch (err) {
         console.error('加载会话数据失败:', err)
@@ -120,59 +134,68 @@ const Chat: React.FC = () => {
 
   // 发送消息
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !sessionId || isSending) return
-    
+    if (!newMessage.trim() || !sessionId || isSending) {
+      return
+    }
+
     const messageContent = newMessage.trim()
+    const optimisticMessage: ChatMessage = {
+      id: `temp-${Date.now()}`,
+      content: messageContent,
+      role: 'user',
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+    }
+
     setNewMessage('')
     setIsSending(true)
     setError(null)
-    stopTyping() // 停止输入状态
-    
-    // 立即添加用户消息到本地状态
-    const userMessage = {
-      id: `user-${Date.now()}`,
-      content: messageContent,
-      role: 'user' as const,
-      timestamp: new Date().toISOString(),
-      session_id: sessionId
-    }
-    setMessages(prev => [...prev, userMessage])
-    
+    stopTyping()
+    setMessages(prev => [...prev, optimisticMessage])
+
     try {
-      // 通过Socket.io发送消息通知
+      const response = await api.messages.send(sessionId, messageContent)
+      if (!response.success || !response.data) {
+        throw new Error(response.error || '发送消息失败')
+      }
+
+      const serverUserMessage = response.data.user_message
+        ? mapApiMessage(response.data.user_message)
+        : optimisticMessage
+      const aiMessage = response.data.ai_message
+        ? mapApiMessage(response.data.ai_message)
+        : null
+
+      setMessages(prev => {
+        const withoutTemp = prev.filter(message => message.id !== optimisticMessage.id)
+        const nextMessages = [...withoutTemp, serverUserMessage]
+        if (aiMessage) {
+          nextMessages.push(aiMessage)
+        }
+        return nextMessages
+      })
+
       if (isConnected) {
         sendSocketMessage({
-          messageId: userMessage.id,
-          content: messageContent,
-          role: 'user',
-          timestamp: userMessage.timestamp
+          messageId: serverUserMessage.id,
+          content: serverUserMessage.content,
+          role: serverUserMessage.role,
+          timestamp: serverUserMessage.timestamp,
         })
-      }
-      
-      const response = await api.messages.send(sessionId, messageContent)
-      if (response.success && response.data) {
-        // 添加AI回复到消息列表
-        const aiMessage = response.data.ai_message
-        setMessages(prev => [...prev, aiMessage])
-        
-        // 通过Socket.io发送AI回复通知
-        if (isConnected) {
+
+        if (aiMessage) {
           sendSocketMessage({
             messageId: aiMessage.id,
             content: aiMessage.content,
-            role: 'assistant',
-            timestamp: aiMessage.created_at
+            role: aiMessage.role,
+            timestamp: aiMessage.timestamp,
           })
         }
-      } else {
-        throw new Error(response.error || `发送消息失败`)
       }
     } catch (err) {
       console.error('发送消息失败:', err)
       setError(err instanceof Error ? err.message : '发送消息失败')
-      // 移除用户消息（因为发送失败）
-      setMessages(prev => prev.slice(0, -1))
-      // 恢复消息内容
+      setMessages(prev => prev.filter(message => message.id !== optimisticMessage.id))
       setNewMessage(messageContent)
     } finally {
       setIsSending(false)
@@ -210,8 +233,16 @@ const Chat: React.FC = () => {
   }
 
   // 格式化时间
-  const formatTime = (timestamp: string) => {
+  const formatTime = (timestamp?: string) => {
+    if (!timestamp) {
+      return ''
+    }
+
     const date = new Date(timestamp)
+    if (Number.isNaN(date.getTime())) {
+      return ''
+    }
+
     return date.toLocaleTimeString('zh-CN', {
       hour: '2-digit',
       minute: '2-digit'

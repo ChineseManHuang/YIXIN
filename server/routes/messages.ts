@@ -72,6 +72,76 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 // 所有消息路由都需要认证
 router.use(authenticateToken)
 
+router.post('/log', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id
+    const sessionId = typeof req.body?.session_id === 'string' ? req.body.session_id.trim() : ''
+    const senderType = typeof req.body?.sender_type === 'string' ? req.body.sender_type.trim() : ''
+    const rawContent = typeof req.body?.content === 'string' ? req.body.content : ''
+    const messageType = typeof req.body?.message_type === 'string' ? req.body.message_type : 'text'
+    const metadata = isRecord(req.body?.metadata) ? req.body.metadata : {}
+
+    if (!sessionId || rawContent.trim().length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Session ID and content are required',
+      })
+      return
+    }
+
+    if (!['user', 'assistant', 'system'].includes(senderType)) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid sender type',
+      })
+      return
+    }
+
+    const sessionRecord = await queryOne<any>(
+      `SELECT id FROM ${TABLES.SESSIONS} WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId],
+    )
+
+    if (!sessionRecord) {
+      res.status(404).json({
+        success: false,
+        error: 'Session not found or access denied',
+      })
+      return
+    }
+
+    const messageId = uuidv4()
+    const now = new Date().toISOString()
+
+    await query(
+      `INSERT INTO ${TABLES.MESSAGES}
+       (id, session_id, sender_type, content, message_type, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [messageId, sessionId, senderType, rawContent.trim(), messageType, JSON.stringify(metadata), now],
+    )
+
+    await query(
+      `UPDATE ${TABLES.SESSIONS}
+       SET updated_at = $1
+       WHERE id = $2`,
+      [now, sessionId],
+    )
+
+    res.status(201).json({
+      success: true,
+      data: {
+        message_id: messageId,
+      },
+    })
+  } catch (error) {
+    console.error('Log message error:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Failed to log message',
+    })
+  }
+})
+
 /**
  * 发送消息到AI咨询会话
  * POST /api/messages
@@ -337,7 +407,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       `INSERT INTO ${TABLES.MESSAGES}
        (id, session_id, sender_type, content, message_type, metadata, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [aiMessageId, sessionId, 'ai', aiResponse.content, aiResponse.type, JSON.stringify(aiResponse.metadata), aiMessageTime]
+      [aiMessageId, sessionId, 'assistant', aiResponse.content, aiResponse.type, JSON.stringify(aiResponse.metadata), aiMessageTime]
     )
 
     const aiMessage = await queryOne<any>(
@@ -682,7 +752,7 @@ router.post('/voice', upload.single('audio'), async (req: Request, res: Response
       [
         aiMessageId,
         session_id,
-        'ai',
+        'assistant',
         aiResponseText,
         'audio',
         JSON.stringify({

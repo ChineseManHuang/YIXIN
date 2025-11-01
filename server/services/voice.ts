@@ -43,7 +43,7 @@ export class VoiceService {
 
   constructor() {
     this.apiKey = env.ALIBABA_VOICE_API_KEY || ''
-    this.baseUrl = env.ALIBABA_VOICE_API_URL || 'https://nls-gateway.cn-shanghai.aliyuncs.com'
+    this.baseUrl = env.ALIBABA_VOICE_API_URL || 'https://nls-gateway.cn-hangzhou.aliyuncs.com'
     
     this.client = axios.create({
       baseURL: this.baseUrl,

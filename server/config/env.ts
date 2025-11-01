@@ -1,4 +1,3 @@
-﻿// Environment configuration helpers
 import dotenv from 'dotenv'
 
 const result = dotenv.config()
@@ -43,40 +42,29 @@ const toNumber = (value: string | undefined, fallback: number): number => {
 
 const nodeEnv = getEnvValue('NODE_ENV', { fallback: 'development' })
 
-const supabaseUrl = getEnvValue('SB_URL', { required: false, fallback: '' })
-const supabaseAnonKey = getEnvValue('SB_ANON_KEY', { required: false, fallback: '' })
-const supabaseServiceRoleKey = getEnvValue('SB_SERVICE_ROLE_KEY', { required: false, fallback: '' })
-
-const warnIfMismatch = (primaryKey: string, counterpartKeys: string[]): void => {
-  const primaryValue = process.env[primaryKey]
-  if (!primaryValue) return
-
-  for (const counterpartKey of counterpartKeys) {
-    const counterpartValue = process.env[counterpartKey]
-    if (!counterpartValue) continue
-
-    if (counterpartValue.trim() !== primaryValue.trim()) {
-      console.warn(
-        '[env] Mismatch detected between "' + primaryKey + '" and "' + counterpartKey + '". Ensure frontend and backend use the same Supabase project.'
-      )
-    }
-  }
-}
-
-warnIfMismatch('SB_URL', ['VITE_SB_URL'])
-warnIfMismatch('SB_ANON_KEY', ['VITE_SB_ANON_KEY'])
+const databaseUrl = getEnvValue('DATABASE_URL', { required: true })
+const jwtSecret = getEnvValue('JWT_SECRET', {
+  fallback: 'dev-jwt-secret-please-change-in-production',
+  required: false,
+})
+const bailianAppId = getEnvValue('BAILIAN_APP_ID', { fallback: '' })
+const bailianApiKey = getEnvValue('BAILIAN_API_KEY', { fallback: '' })
+const bailianEndpoint = getEnvValue('BAILIAN_ENDPOINT', { fallback: '' })
+const bailianAgentId = getEnvValue('BAILIAN_AGENT_ID', { fallback: '' })
+const alibabaVoiceApiKey = getEnvValue('ALIBABA_VOICE_API_KEY', { fallback: '' })
+const alibabaVoiceApiUrl = getEnvValue('ALIBABA_VOICE_API_URL', { fallback: '' })
+const backendDeployHookUrl = getEnvValue('BACKEND_DEPLOY_HOOK_URL')
+const frontendDeployHookUrl = getEnvValue('FRONTEND_DEPLOY_HOOK_URL')
+const rtcAppId = getEnvValue('RTC_APP_ID', { fallback: '' })
+const rtcAppKey = getEnvValue('RTC_APP_KEY', { fallback: '' })
+const rtcRegion = getEnvValue('RTC_REGION', { fallback: 'cn-hangzhou' })
 
 export const env = {
   NODE_ENV: nodeEnv,
   IS_PRODUCTION: nodeEnv === 'production',
   PORT: toNumber(process.env.PORT, 3001),
-  SB_URL: supabaseUrl,
-  SB_ANON_KEY: supabaseAnonKey,
-  SB_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
-  JWT_SECRET: getEnvValue('JWT_SECRET', {
-    fallback: 'dev-jwt-secret-please-change-in-production',
-    required: false,
-  }),
+  DATABASE_URL: databaseUrl,
+  JWT_SECRET: jwtSecret,
   CLIENT_ORIGINS: parseList(
     getEnvValue('CLIENT_ORIGINS', {
       fallback: nodeEnv === 'production'
@@ -84,44 +72,40 @@ export const env = {
         : 'http://localhost:5173,http://localhost:3000',
     }),
   ),
-  BAILIAN_APP_ID: getEnvValue('BAILIAN_APP_ID'),
-  BAILIAN_API_KEY: getEnvValue('BAILIAN_API_KEY'),
-  BAILIAN_ENDPOINT: getEnvValue('BAILIAN_ENDPOINT'),
-  ALIBABA_VOICE_API_KEY: getEnvValue('ALIBABA_VOICE_API_KEY'),
-  ALIBABA_VOICE_API_URL: getEnvValue('ALIBABA_VOICE_API_URL'),
-  BACKEND_DEPLOY_HOOK_URL: getEnvValue('BACKEND_DEPLOY_HOOK_URL'),
-  FRONTEND_DEPLOY_HOOK_URL: getEnvValue('FRONTEND_DEPLOY_HOOK_URL'),
+  BAILIAN_APP_ID: bailianAppId,
+  BAILIAN_API_KEY: bailianApiKey,
+  BAILIAN_ENDPOINT: bailianEndpoint,
+  BAILIAN_AGENT_ID: bailianAgentId,
+  ALIBABA_VOICE_API_KEY: alibabaVoiceApiKey,
+  ALIBABA_VOICE_API_URL: alibabaVoiceApiUrl,
+  BACKEND_DEPLOY_HOOK_URL: backendDeployHookUrl,
+  FRONTEND_DEPLOY_HOOK_URL: frontendDeployHookUrl,
+  RTC_APP_ID: rtcAppId,
+  RTC_APP_KEY: rtcAppKey,
+  RTC_REGION: rtcRegion,
 }
 
 if (env.IS_PRODUCTION) {
-  // After migrating to RDS PostgreSQL, Supabase variables are no longer required
-  // Only JWT_SECRET is required for user authentication
-  const requiredKeys: Array<keyof typeof env> = [
-    'JWT_SECRET',
-  ]
+  const missing: string[] = []
 
-  const missing = requiredKeys.filter((key) => {
-    const value = env[key]
-    if (typeof value === 'number') {
-      return false
-    }
-    if (typeof value === 'string') {
-      return value.trim().length === 0
-    }
-    return value === null || value === undefined
-  })
+  if (!env.DATABASE_URL) missing.push('DATABASE_URL')
+  if (!env.JWT_SECRET) missing.push('JWT_SECRET')
+  // Bailian-related variables are optional in production.
+  // If Bailian features are enabled, route-level checks will warn accordingly.
+  if (!env.RTC_APP_ID) missing.push('RTC_APP_ID')
+  if (!env.RTC_APP_KEY) missing.push('RTC_APP_KEY')
 
   if (missing.length > 0) {
-    console.error('⚠️ Missing required production environment variables: ' + missing.join(', '))
-    console.error('⚠️ Please set these in your deployment environment or .env file')
-    // Don't throw, just warn - allow the app to start
+    console.error('[env] Missing required production environment variables: ' + missing.join(', '))
+    console.error('[env] Please set these in your Alibaba Cloud ECS environment or .env file.')
+    // Do not throw - we still allow the server to boot for diagnostics
   }
 }
 
 if (env.CLIENT_ORIGINS.length === 0) {
   if (env.IS_PRODUCTION) {
-    console.warn('⚠️ CLIENT_ORIGINS not configured in production. CORS may block requests.')
-    console.warn('⚠️ Set CLIENT_ORIGINS to your frontend domain (e.g., https://yinxintest99.edgeone.app)')
+    console.warn('[env] CLIENT_ORIGINS not configured in production. CORS may block requests.')
+    console.warn('[env] Set CLIENT_ORIGINS to your frontend domain (e.g., https://yixinaipsy.com)')
   } else {
     console.warn('[env] No CLIENT_ORIGINS configured, using development defaults.')
   }

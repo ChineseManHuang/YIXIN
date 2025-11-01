@@ -16,6 +16,7 @@ import Profile from './pages/Profile'
 import Resources from './pages/Resources'
 import Help from './pages/Help'
 import VoiceConsultation from './pages/VoiceConsultation'
+import Footer from './components/Footer'
 
 // 受保护的路由组件
 interface ProtectedRouteProps {
@@ -50,73 +51,76 @@ const PublicRoute: React.FC<PublicRouteProps> = ({ children }) => {
 const App: React.FC = () => {
   return (
     <Router>
-      <div className="App">
-        <Routes>
-          {/* 公共路由 */}
-          <Route path="/" element={<Home />} />
-          <Route 
-            path="/login" 
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            } 
-          />
-          <Route 
-            path="/register" 
-            element={
-              <PublicRoute>
-                <Register />
-              </PublicRoute>
-            } 
-          />
-          
-          {/* 受保护的路由 */}
-          <Route 
-            path="/dashboard" 
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/chat/:sessionId?" 
-            element={
-              <ProtectedRoute>
-                <Chat />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/profile" 
-            element={
-              <ProtectedRoute>
-                <Profile />
-              </ProtectedRoute>
-            } 
-          />
-          <Route
-            path="/resources"
-            element={
-              <ProtectedRoute>
-                <Resources />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/consultation/:sessionId"
-            element={
-              <ProtectedRoute>
-                <VoiceConsultation />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/help" element={<Help />} />
+      <div className="App min-h-screen flex flex-col">
+        <div className="flex-1">
+          <Routes>
+            {/* 公共路由 */}
+            <Route path="/" element={<Home />} />
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PublicRoute>
+                  <Register />
+                </PublicRoute>
+              }
+            />
 
-          {/* 404 页面 */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            {/* 受保护的路由 */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/chat/:sessionId?"
+              element={
+                <ProtectedRoute>
+                  <Chat />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/resources"
+              element={
+                <ProtectedRoute>
+                  <Resources />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/consultation/:sessionId"
+              element={
+                <ProtectedRoute>
+                  <VoiceConsultation />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/help" element={<Help />} />
+
+            {/* 404 页面 */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+        <Footer />
       </div>
     </Router>
   )

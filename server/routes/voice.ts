@@ -1,16 +1,204 @@
 import { Router, Request, Response, NextFunction } from 'express'
-
 import multer from 'multer'
+import { v4 as uuidv4 } from 'uuid'
 
 import { voiceService, VoiceService } from '../services/voice.js'
-
 import { authenticateToken } from '../middleware/auth.js'
-
-import { query, TABLES } from '../config/database.js'
-
-
+import { query, queryOne, TABLES, type KBProgress } from '../config/database.js'
+import { generateRtcToken } from '../services/rtc-token.js'
+import { env } from '../config/env.js'
+import { KBEngine } from '../services/kb-engine.js'
 
 const router = Router()
+
+// 获取新的 RTC 加入令牌（用于刷新）
+router.post('/token', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id
+    const { session_id: sessionId } = req.body ?? {}
+
+    if (!sessionId || typeof sessionId !== 'string') {
+      res.status(400).json({ success: false, error: '缺少有效的 session_id' })
+      return
+    }
+
+    // 校验会话归属
+    const session = await queryOne<any>(
+      `SELECT id FROM ${TABLES.SESSIONS} WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId],
+    )
+
+    if (!session) {
+      res.status(404).json({ success: false, error: '会话不存在或无权访问' })
+      return
+    }
+
+    const rtc = generateRtcToken({ channelId: sessionId, userId })
+
+    res.status(200).json({
+      success: true,
+      data: {
+        appId: env.RTC_APP_ID,
+        token: rtc.token,
+        channelId: sessionId,
+        timestamp: rtc.timestamp,
+        nonce: rtc.nonce,
+        region: env.RTC_REGION,
+      },
+    })
+  } catch (error) {
+    console.error('Generate RTC token error:', error)
+    res.status(500).json({ success: false, error: '生成RTC令牌失败' })
+  }
+})
+
+router.post('/session-config', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    if (!env.BAILIAN_AGENT_ID || !env.BAILIAN_APP_ID) {
+      res.status(500).json({
+        success: false,
+        error: 'Bailian agent is not configured. Please provide BAILIAN_AGENT_ID and BAILIAN_APP_ID.',
+      })
+      return
+    }
+
+    const userId = req.user!.id
+    const { session_id: sessionIdFromBody, title } = req.body ?? {}
+    let sessionId = typeof sessionIdFromBody === 'string' && sessionIdFromBody.trim().length > 0
+      ? sessionIdFromBody.trim()
+      : ''
+    const now = new Date().toISOString()
+
+    let sessionRecord: any | null = null
+
+    if (sessionId) {
+      sessionRecord = await queryOne<any>(
+        `SELECT * FROM ${TABLES.SESSIONS} WHERE id = $1 AND user_id = $2`,
+        [sessionId, userId],
+      )
+
+      if (!sessionRecord) {
+        res.status(404).json({
+          success: false,
+          error: 'Session not found or access denied',
+        })
+        return
+      }
+    } else {
+      sessionId = uuidv4()
+      const sessionTitle = typeof title === 'string' && title.trim().length > 0
+        ? title.trim()
+        : '语音咨询'
+
+      await query(
+        `INSERT INTO ${TABLES.SESSIONS}
+         (id, user_id, title, status, current_kb_step, session_data, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [sessionId, userId, sessionTitle, 'active', 1, JSON.stringify({ mode: 'voice' }), now, now],
+      )
+
+      sessionRecord = await queryOne<any>(
+        `SELECT * FROM ${TABLES.SESSIONS} WHERE id = $1`,
+        [sessionId],
+      )
+
+      if (!sessionRecord) {
+        res.status(500).json({
+          success: false,
+          error: 'Failed to create voice session',
+        })
+        return
+      }
+
+      try {
+        await KBEngine.initializeKBProgress(sessionId, userId)
+      } catch (kbError) {
+        console.error('Initialize KB progress error (voice session):', kbError)
+      }
+    }
+
+    const userProfile = await queryOne<{ full_name?: string }>(
+      `SELECT full_name FROM ${TABLES.USER_PROFILES} WHERE user_id = $1`,
+      [userId],
+    )
+
+    const sessionCountResult = await queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM ${TABLES.SESSIONS} WHERE user_id = $1`,
+      [userId],
+    )
+
+    const kbProgress = await queryOne<KBProgress>(
+      `SELECT current_stage, stage_messages FROM ${TABLES.KB_PROGRESS} WHERE session_id = $1`,
+      [sessionId],
+    )
+
+    const sessionCount = sessionCountResult ? Number(sessionCountResult.count) : 0
+    const currentStage = kbProgress?.current_stage ?? null
+
+    await query(
+      `UPDATE ${TABLES.SESSIONS}
+       SET session_data = COALESCE(session_data, '{}'::jsonb) || $1::jsonb,
+           updated_at = $2
+       WHERE id = $3`,
+      [JSON.stringify({ voice: { last_connect_at: now } }), now, sessionId],
+    )
+
+    const bailianAppParams = {
+      biz_params: {
+        user_id: userId,
+        session_id: sessionId,
+        full_name: userProfile?.full_name ?? undefined,
+        session_count: sessionCount,
+        current_stage: currentStage ?? undefined,
+      },
+      memory_id: `user_${userId}`,
+    }
+
+    const rtc = generateRtcToken({
+      channelId: sessionId,
+      userId,
+    })
+
+    const responseData = {
+      session: {
+        id: sessionRecord.id,
+        title: sessionRecord.title,
+        status: sessionRecord.status,
+        current_kb_step: sessionRecord.current_kb_step ?? null,
+        created_at: sessionRecord.created_at,
+        updated_at: sessionRecord.updated_at,
+      },
+      user: {
+        id: userId,
+        full_name: userProfile?.full_name ?? null,
+      },
+      rtc: {
+        appId: env.RTC_APP_ID,
+        token: rtc.token,
+        channelId: sessionId,
+        timestamp: rtc.timestamp,
+        nonce: rtc.nonce,
+      },
+      agent: {
+        agentId: env.BAILIAN_AGENT_ID,
+        appId: env.BAILIAN_APP_ID,
+        bailianAppParams,
+        region: env.RTC_REGION,
+      },
+    }
+
+    res.status(200).json({
+      success: true,
+      data: responseData,
+    })
+  } catch (error) {
+    console.error('Voice session config error:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Failed to prepare voice session',
+    })
+  }
+})
 
 
 

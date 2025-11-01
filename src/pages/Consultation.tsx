@@ -65,7 +65,7 @@ const Consultation: React.FC = () => {
           initiateAIGreeting(response.data.session)
         } else {
           // 如果有历史消息,显示最后一条AI消息
-          const lastAIMessage = messages.filter(m => m.sender_type === 'ai').pop()
+          const lastAIMessage = messages.filter(m => m.sender_type === 'assistant').pop()
           if (lastAIMessage) {
             setCurrentAIMessage(lastAIMessage.content)
             speakText(lastAIMessage.content)

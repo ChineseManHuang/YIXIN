@@ -1,97 +1,116 @@
 /**
- * 延迟测试脚本
- * 用于测试部署后的实际延迟情况
+ * Latency probing script for the Alibaba Cloud deployment.
+ * Usage: node scripts/test-latency.js
  *
- * 运行方式: node scripts/test-latency.js
+ * Optional environment variables:
+ *   API_URL        - override default backend URL (default: http://8.148.73.181:3000/api)
+ *   TEST_EMAIL     - existing user email for login test
+ *   TEST_PASSWORD  - password for the login test
  */
 
-import fetch from 'node-fetch';
+const API_URL = process.env.API_URL || 'http://8.148.73.181:3000/api'
+const TEST_EMAIL = process.env.TEST_EMAIL
+const TEST_PASSWORD = process.env.TEST_PASSWORD
 
-const API_URL = 'http://8.148.73.181:3000/api';
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://your-project.supabase.co';
-
-// 颜色输出
-const colors = {
+const COLORS = {
   reset: '\x1b[0m',
   green: '\x1b[32m',
   yellow: '\x1b[33m',
   red: '\x1b[31m',
   cyan: '\x1b[36m',
-};
-
-function colorize(text, color) {
-  return `${color}${text}${colors.reset}`;
 }
 
-async function measureLatency(url, name) {
-  const results = [];
+const colorize = (text, color) => color + text + COLORS.reset
 
-  console.log(`\n${colorize(`测试: ${name}`, colors.cyan)}`);
-  console.log('─'.repeat(50));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-  for (let i = 0; i < 5; i++) {
-    const start = Date.now();
+const classifyLatency = (value) => {
+  if (value < 200) return COLORS.green
+  if (value < 500) return COLORS.yellow
+  return COLORS.red
+}
+
+async function measureLatency(name, requestFactory, iterations = 5) {
+  const samples = []
+  console.log('\n' + colorize('>> ' + name, COLORS.cyan))
+  console.log('-'.repeat(60))
+
+  for (let i = 0; i < iterations; i += 1) {
+    const { url, options } = requestFactory()
+    const started = Date.now()
 
     try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const response = await fetch(url, options)
+      const elapsed = Date.now() - started
+      samples.push(elapsed)
 
-      const latency = Date.now() - start;
-      results.push(latency);
-
-      const status = response.ok ? colorize('✓', colors.green) : colorize('✗', colors.red);
-      const latencyColor = latency < 200 ? colors.green : latency < 500 ? colors.yellow : colors.red;
-
-      console.log(`  ${status} 请求 ${i + 1}: ${colorize(`${latency}ms`, latencyColor)}`);
-
-      // 等待1秒再发下一个请求
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
+      const statusColor = response.ok ? COLORS.green : COLORS.red
+      const latencyColor = classifyLatency(elapsed)
+      console.log(
+        `  #${i + 1} ${colorize(`${response.status} ${response.statusText}`, statusColor)} in ${colorize(`${elapsed}ms`, latencyColor)}`
+      )
     } catch (error) {
-      console.log(`  ${colorize('✗', colors.red)} 请求 ${i + 1}: ${colorize('失败', colors.red)} - ${error.message}`);
+      console.log(`  #${i + 1} ${colorize('ERROR', COLORS.red)} ${error instanceof Error ? error.message : String(error)}`)
     }
+
+    await sleep(1000)
   }
 
-  if (results.length > 0) {
-    const avg = Math.round(results.reduce((a, b) => a + b, 0) / results.length);
-    const min = Math.min(...results);
-    const max = Math.max(...results);
+  if (samples.length > 0) {
+    const average = Math.round(samples.reduce((acc, cur) => acc + cur, 0) / samples.length)
+    const min = Math.min(...samples)
+    const max = Math.max(...samples)
 
-    console.log('─'.repeat(50));
-    console.log(`  平均延迟: ${colorize(`${avg}ms`, avg < 200 ? colors.green : avg < 500 ? colors.yellow : colors.red)}`);
-    console.log(`  最小延迟: ${colorize(`${min}ms`, colors.green)}`);
-    console.log(`  最大延迟: ${colorize(`${max}ms`, max < 500 ? colors.yellow : colors.red)}`);
+    console.log('-'.repeat(60))
+    console.log(`  avg: ${colorize(`${average}ms`, classifyLatency(average))}`)
+    console.log(`  min: ${colorize(`${min}ms`, COLORS.green)}`)
+    console.log(`  max: ${colorize(`${max}ms`, classifyLatency(max))}`)
   }
-
-  return results;
 }
 
-async function testFullFlow() {
-  console.log(colorize('\n🚀 意心平台 - 延迟性能测试', colors.cyan));
-  console.log('='.repeat(50));
+async function run() {
+  console.log(colorize('\nYIXIN latency benchmark (ECS/RDS)', COLORS.cyan))
+  console.log('='.repeat(60))
+  console.log(`Backend base URL: ${API_URL}`)
 
-  // 1. 测试后端健康检查
-  await measureLatency(`${API_URL}/health`, '后端健康检查');
+  const tests = [
+    {
+      name: 'Health endpoint',
+      requestFactory: () => ({
+        url: `${API_URL}/health`,
+        options: { method: 'GET' },
+      }),
+    },
+  ]
 
-  // 2. 测试 Supabase 连接（如果配置了）
-  if (SUPABASE_URL && SUPABASE_URL !== 'https://your-project.supabase.co') {
-    await measureLatency(`${SUPABASE_URL}/rest/v1/`, 'Supabase 数据库连接');
+  if (TEST_EMAIL && TEST_PASSWORD) {
+    tests.push({
+      name: 'Auth login',
+      requestFactory: () => ({
+        url: `${API_URL}/auth/login`,
+        options: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: TEST_EMAIL, password: TEST_PASSWORD }),
+        },
+      }),
+    })
   }
 
-  console.log('\n' + '='.repeat(50));
-  console.log(colorize('\n📊 延迟评估标准:', colors.cyan));
-  console.log(`  ${colorize('< 200ms', colors.green)}  - 优秀 🎉`);
-  console.log(`  ${colorize('200-500ms', colors.yellow)} - 良好 👍`);
-  console.log(`  ${colorize('> 500ms', colors.red)}  - 需要优化 ⚠️`);
+  for (const test of tests) {
+    // eslint-disable-next-line no-await-in-loop
+    await measureLatency(test.name, test.requestFactory)
+  }
 
-  console.log('\n' + colorize('💡 优化建议:', colors.cyan));
-  console.log('  如果延迟 > 500ms，建议考虑:');
-  console.log('  1. 添加 Redis 缓存层（方案1）');
-  console.log('  2. 迁移到阿里云 PolarDB（方案2）');
-  console.log('  3. 实施异步消息处理（方案4）\n');
+  console.log('\n' + '='.repeat(60))
+  console.log(colorize('Latency guide:', COLORS.cyan))
+  console.log(`  ${colorize('< 200ms', COLORS.green)}   excellent`)
+  console.log(`  ${colorize('200-500ms', COLORS.yellow)} acceptable`)
+  console.log(`  ${colorize('> 500ms', COLORS.red)}   investigate network or server load`)
+  console.log('')
 }
 
-// 运行测试
-testFullFlow().catch(console.error);
+run().catch((error) => {
+  console.error('Latency script failed:', error)
+  process.exit(1)
+})

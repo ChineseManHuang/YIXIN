@@ -1,489 +1,523 @@
-/**
- * 语音咨询页面 - AI主动引导的沉浸式语音交互界面
- * 核心特点:
- * 1. 大圆形语音图标为中心交互
- * 2. AI主动发起对话和引导
- * 3. 全程语音交互模式
- * 4. AI回复以文字形式显示在屏幕上
- * 5. 严格按照KB01-05线性工作流推进
- */
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import {
+  Mic,
+  PhoneOff,
+  Volume2,
+  VolumeX,
+  Loader2,
+  ArrowLeft,
+  RefreshCcw,
+} from 'lucide-react'
+
 import { useAuthStore } from '../lib/auth-store'
-import { api } from '../lib/api'
-import { Mic, MicOff, Volume2, ArrowLeft, Loader2 } from 'lucide-react'
-import type { Message, Session } from '../lib/api'
+import {
+  api,
+  type Message,
+  type Session,
+  type VoiceSessionConfig,
+} from '../lib/api'
+import aiCallService, {
+  type AgentState,
+  type SubtitleMessage,
+} from '../services/ai-call-service'
+
+type StageCopy = Record<number, string>
+
+const KB_STAGE_COPY: StageCopy = {
+  1: '阶段 1 · 建立安全感和信任氛围',
+  2: '阶段 2 · 继续探索问题的具体影响',
+  3: '阶段 3 · 明确目标并建立改变动机',
+  4: '阶段 4 · 练习与巩固应对策略',
+  5: '阶段 5 · 回顾与整合新的认知模式',
+}
+
+const formatDisplayTime = (iso: string): string => {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  return date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 const VoiceConsultation: React.FC = () => {
   const navigate = useNavigate()
-  const { sessionId } = useParams<{ sessionId: string }>()
+  const { sessionId: sessionIdFromParams } = useParams<{ sessionId: string }>()
   const { isAuthenticated } = useAuthStore()
 
-  // 会话状态
-  const [session, setSession] = useState<Session | null>(null)
-  const [currentAIMessage, setCurrentAIMessage] = useState<string>('')
+  const [sessionConfig, setSessionConfig] = useState<VoiceSessionConfig | null>(null)
+  const [sessionMeta, setSessionMeta] = useState<Session | null>(null)
   const [conversationHistory, setConversationHistory] = useState<Message[]>([])
-
-  // 语音交互状态
-  const [isRecording, setIsRecording] = useState(false)
-  const [isAISpeaking, setIsAISpeaking] = useState(false)
+  const [agentState, setAgentState] = useState<AgentState>(aiCallService.currentState)
+  const [currentAIMessage, setCurrentAIMessage] = useState<string>('')
+  const [isMuted, setIsMuted] = useState(false)
+  const [speakerOn, setSpeakerOn] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // 会话初始化状态
-  const [isSessionInitialized, setIsSessionInitialized] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  // 语音相关引用
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([])
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null)
-  const hasGreetedRef = useRef(false)
+  const loggedSubtitlesRef = useRef<Set<string>>(new Set())
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
-  // 检查认证
+  const activeSessionId = sessionConfig?.session.id ?? sessionIdFromParams ?? ''
+
+  // Redirect to login if user is not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/login')
+      navigate('/login', { replace: true })
     }
   }, [isAuthenticated, navigate])
 
-  // 加载会话并触发AI初始问候
-  const loadSessionAndInitiate = useCallback(async () => {
-    if (!sessionId || hasGreetedRef.current) return
-
+  const loadConversationHistory = useCallback(async (resolvedSessionId: string) => {
     try {
-      setIsLoading(true)
-      const response = await api.sessions.get(sessionId)
-
+      const response = await api.sessions.get(resolvedSessionId)
       if (response.success && response.data) {
-        setSession(response.data.session)
-        const messages = response.data.recent_messages || []
-        setConversationHistory(messages)
+        setSessionMeta(response.data.session)
+        const history = response.data.recent_messages ?? []
+        setConversationHistory(history)
 
-        // 如果没有消息,AI主动发起问候
-        if (messages.length === 0) {
-          hasGreetedRef.current = true
-          await initiateAIGreeting(response.data.session)
-        } else {
-          // 如果有历史消息,显示最后一条AI消息
-          const lastAIMessage = messages.filter(m => m.sender_type === 'ai').pop()
-          if (lastAIMessage) {
-            setCurrentAIMessage(lastAIMessage.content)
-          }
-        }
-
-        setIsSessionInitialized(true)
-      }
-    } catch (error) {
-      console.error('Failed to load session:', error)
-      setError('加载会话失败，请重试')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [sessionId])
-
-  // AI主动发起问候
-  const initiateAIGreeting = async (sessionData: Session) => {
-    try {
-      setIsProcessing(true)
-
-      // 根据KB阶段生成初始问候语
-      const greetings = {
-        1: '你好,我是你的AI心理咨询师。很高兴能陪伴你。在开始之前,能先告诉我,是什么让你想要寻求心理咨询的帮助呢?',
-        2: '欢迎回来。上次我们探讨了一些重要的内容。今天我想和你一起更深入地了解这些感受背后的原因。你准备好了吗?',
-        3: '很高兴再次见到你。根据我们之前的交流,今天我想通过一些问题来帮助你更好地认识自己。我们可以开始了吗?',
-        4: '你好。今天我们将一起探索一些具体的应对方法。在此之前,你能先分享一下最近的感受吗?',
-        5: '欢迎。我们已经走过了很多阶段,今天让我们一起回顾和总结这段旅程。你觉得如何?'
-      }
-
-      const kbStep = sessionData.current_kb_step || 1
-      const greeting = greetings[kbStep as keyof typeof greetings] || greetings[1]
-
-      // 发送初始问候
-      const response = await api.messages.send(sessionId!, greeting, 'text')
-
-      if (response.success && response.data) {
-        const aiMessage = response.data.ai_message
-        setCurrentAIMessage(aiMessage.content)
-        setConversationHistory([response.data.user_message, aiMessage])
-
-        // 播放AI问候语音
-        if (response.data.ai_audio) {
-          playAIAudio(response.data.ai_audio)
-        } else {
-          // 使用TTS播放
-          speakText(aiMessage.content)
+        const latestAIMessage = history
+          .filter((item) => item.sender_type === 'assistant')
+          .slice(-1)[0]
+        if (latestAIMessage) {
+          setCurrentAIMessage(latestAIMessage.content)
         }
       }
-    } catch (error) {
-      console.error('Failed to initiate AI greeting:', error)
-      setError('AI初始化失败')
-    } finally {
-      setIsProcessing(false)
+    } catch (historyError) {
+      console.error('Failed to load conversation history:', historyError)
     }
-  }
+  }, [])
 
-  // 初始化会话
+  const resolveSessionConfig = useCallback(
+    async (hintSessionId?: string, hintTitle?: string): Promise<VoiceSessionConfig | null> => {
+      try {
+        const response = await api.voice.getSessionConfig(hintSessionId, hintTitle)
+        if (!response.success || !response.data) {
+          setError(response.error ?? '获取语音咨询配置失败')
+          return null
+        }
+
+        const config = response.data
+        setSessionConfig(config)
+
+        // If backend created a new session, update route
+        if (sessionIdFromParams && config.session.id !== sessionIdFromParams) {
+          navigate(`/consultation/${config.session.id}`, { replace: true })
+        }
+
+        await loadConversationHistory(config.session.id)
+        setError(null)
+        return config
+      } catch (configError) {
+        console.error('Failed to fetch voice session config:', configError)
+        setError('无法获取语音通话配置，请稍后重试')
+        return null
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [loadConversationHistory, navigate, sessionIdFromParams],
+  )
+
   useEffect(() => {
-    if (isAuthenticated && sessionId && !isSessionInitialized) {
-      loadSessionAndInitiate()
+    if (!isAuthenticated) {
+      return
     }
-  }, [isAuthenticated, sessionId, isSessionInitialized, loadSessionAndInitiate])
+    const controller = new AbortController()
 
-  // 开始录音
-  const startRecording = async () => {
-    try {
-      // 停止当前播放的音频
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current = null
-        setIsAISpeaking(false)
-      }
+    setIsLoading(true)
+    void resolveSessionConfig(sessionIdFromParams)
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      })
-
-      const chunks: Blob[] = []
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data)
-        }
-      }
-
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(track => track.stop())
-
-        if (chunks.length > 0) {
-          await handleVoiceInput(chunks)
-        }
-      }
-
-      recorder.start()
-      setMediaRecorder(recorder)
-      setIsRecording(true)
-      setError(null)
-    } catch (error) {
-      console.error('Failed to start recording:', error)
-      setError('无法访问麦克风，请检查权限设置')
-    }
-  }
-
-  // 停止录音
-  const stopRecording = () => {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop()
-      setIsRecording(false)
-      setMediaRecorder(null)
-    }
-  }
-
-  // 处理语音输入
-  const handleVoiceInput = async (chunks: Blob[]) => {
-    if (!sessionId) return
-
-    try {
-      setIsProcessing(true)
-      setError(null)
-
-      // 合并音频块
-      const audioBlob = new Blob(chunks, { type: 'audio/webm' })
-
-      // 发送音频到服务器
-      const formData = new FormData()
-      formData.append('audio', audioBlob, 'recording.webm')
-      formData.append('session_id', sessionId)
-      formData.append('message_type', 'audio')
-
-      const token = localStorage.getItem('auth_token')
-      const response = await fetch('/api/messages/voice', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      })
-
-      const result = await response.json()
-
-      if (result.success && result.data) {
-        // 更新对话历史
-        const userMsg = result.data.user_message
-        const aiMsg = result.data.ai_message
-
-        setConversationHistory(prev => [...prev, userMsg, aiMsg])
-        setCurrentAIMessage(aiMsg.content)
-
-        // 播放AI回复
-        if (result.data.ai_audio) {
-          playAIAudio(result.data.ai_audio)
-        } else {
-          speakText(aiMsg.content)
-        }
-      } else {
-        throw new Error(result.error || '语音处理失败')
-      }
-    } catch (err) {
-      console.error('处理语音输入失败:', err)
-      setError(err instanceof Error ? err.message : '语音处理失败，请重试')
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
-  // 播放AI音频
-  const playAIAudio = (audioBase64: string) => {
-    try {
-      // 停止当前播放
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current = null
-      }
-
-      const audio = new Audio(`data:audio/wav;base64,${audioBase64}`)
-      currentAudioRef.current = audio
-
-      audio.onplay = () => setIsAISpeaking(true)
-      audio.onended = () => {
-        setIsAISpeaking(false)
-        currentAudioRef.current = null
-      }
-      audio.onerror = () => {
-        setIsAISpeaking(false)
-        currentAudioRef.current = null
-        console.error('音频播放失败')
-        // 回退到TTS
-        speakText(currentAIMessage)
-      }
-
-      audio.play().catch(err => {
-        console.error('音频播放失败:', err)
-        speakText(currentAIMessage)
-      })
-    } catch (err) {
-      console.error('播放AI音频失败:', err)
-      speakText(currentAIMessage)
-    }
-  }
-
-  // 使用浏览器TTS播放文本
-  const speakText = (text: string) => {
-    if ('speechSynthesis' in window) {
-      // 停止当前语音
-      speechSynthesis.cancel()
-
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = 'zh-CN'
-      utterance.rate = 0.9
-      utterance.pitch = 1.0
-
-      utterance.onstart = () => setIsAISpeaking(true)
-      utterance.onend = () => setIsAISpeaking(false)
-      utterance.onerror = () => setIsAISpeaking(false)
-
-      speechSynthesis.speak(utterance)
-    }
-  }
-
-  // 清理音频资源
-  useEffect(() => {
     return () => {
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current = null
-      }
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop()
-      }
-      if ('speechSynthesis' in window) {
-        speechSynthesis.cancel()
-      }
+      controller.abort()
     }
-  }, [mediaRecorder])
+  }, [isAuthenticated, resolveSessionConfig, sessionIdFromParams])
 
-  if (!isAuthenticated) {
-    return null
-  }
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 items-center justify-center">
-        <Loader2 className="w-16 h-16 text-indigo-600 animate-spin mb-4" />
-        <p className="text-gray-700 font-medium">正在初始化咨询会话...</p>
-      </div>
-    )
-  }
+  useEffect(() => {
+    scrollToBottom()
+  }, [conversationHistory, scrollToBottom])
+
+  const appendMessageToHistory = useCallback((message: Message) => {
+    setConversationHistory((prev) => [...prev, message])
+  }, [])
+
+  const logSubtitleMessage = useCallback(
+    async (subtitle: SubtitleMessage) => {
+      if (!sessionConfig) {
+        return
+      }
+
+      const raw = (subtitle.raw ?? {}) as Record<string, unknown>
+      const sentenceId = typeof raw.sentenceId === 'number' ? raw.sentenceId : undefined
+      const voiceprintResult = raw.voiceprintResult
+      const subtitleTimestamp = subtitle.timestamp ?? Date.now()
+      const keySeed = sentenceId ?? subtitleTimestamp
+
+      const canonicalKey = [
+        subtitle.role,
+        keySeed,
+        subtitle.text,
+      ].join('::')
+
+      if (loggedSubtitlesRef.current.has(canonicalKey)) {
+        return
+      }
+
+      loggedSubtitlesRef.current.add(canonicalKey)
+
+      const senderType: Message['sender_type'] =
+        subtitle.role === 'assistant' || subtitle.role === 'system'
+          ? subtitle.role
+          : 'user'
+
+      const createdAt = new Date(subtitleTimestamp).toISOString()
+      const loggingMetadata: Record<string, unknown> = {
+        source: 'aliyun-realtime',
+        is_final: subtitle.isFinal,
+        subtitle_timestamp: subtitleTimestamp,
+      }
+
+      if (typeof sentenceId === 'number') {
+        loggingMetadata.sentence_id = sentenceId
+      }
+      if (typeof voiceprintResult !== 'undefined') {
+        loggingMetadata.voiceprint_result = voiceprintResult
+      }
+
+      try {
+        const response = await api.messages.log(
+          sessionConfig.session.id,
+          senderType,
+          subtitle.text,
+          'text',
+          loggingMetadata,
+        )
+
+        const messageId =
+          (response.success && response.data?.message_id) || `temp-${Date.now()}`
+
+        appendMessageToHistory({
+          id: messageId,
+          session_id: sessionConfig.session.id,
+          sender_type: senderType,
+          content: subtitle.text,
+          message_type: 'text',
+          metadata: {
+            ...loggingMetadata,
+            agent_state: agentState,
+          },
+          created_at: createdAt,
+        })
+      } catch (logError) {
+        console.error('Failed to log realtime subtitle:', logError)
+      }
+    },
+    [agentState, appendMessageToHistory, sessionConfig],
+  )
+
+  const handleSubtitle = useCallback(
+    (subtitle: SubtitleMessage) => {
+      if (subtitle.role === 'assistant') {
+        // Keep UI responsive with the latest assistant speech
+        setCurrentAIMessage(subtitle.text)
+      }
+
+      if (subtitle.isFinal) {
+        void logSubtitleMessage(subtitle)
+      }
+    },
+    [logSubtitleMessage],
+  )
+
+  useEffect(() => {
+    const unsubscribeState = aiCallService.onStateChange((state) => {
+      setAgentState(state)
+      if (state === 'connecting') {
+        setIsProcessing(true)
+      } else if (state === 'ended' || state === 'error' || state === 'listening' || state === 'speaking' || state === 'thinking') {
+        setIsProcessing(false)
+      }
+    })
+
+    const unsubscribeMessages = aiCallService.onMessage(handleSubtitle)
+
+    return () => {
+      unsubscribeMessages()
+      unsubscribeState()
+      void aiCallService.hangup()
+    }
+  }, [handleSubtitle])
+
+  const startVoiceSession = useCallback(async () => {
+    if (!isAuthenticated) {
+      navigate('/login')
+      return
+    }
+
+    setIsProcessing(true)
+    try {
+      const config = await resolveSessionConfig(activeSessionId, sessionMeta?.title)
+      if (!config) {
+        return
+      }
+
+      await aiCallService.initialize({
+        rtc: {
+          token: config.rtc.token,
+          channelId: config.rtc.channelId,
+          appId: config.rtc.appId,
+          timestamp: config.rtc.timestamp,
+          nonce: config.rtc.nonce,
+        },
+        agent: {
+          agentId: config.agent.agentId,
+          appId: config.agent.appId,
+          region: config.agent.region ?? 'cn-hangzhou',
+          bailianAppParams: config.agent.bailianAppParams,
+        },
+        sessionId: config.session.id,
+        userId: config.user.id,
+      })
+
+      aiCallService.setSpeaker(true)
+      setSpeakerOn(true)
+      setIsMuted(false)
+      setError(null)
+    } catch (startError) {
+      console.error('Failed to start realtime voice session:', startError)
+      setError('语音通话启动失败，请检查网络或稍后再试')
+      setIsProcessing(false)
+    }
+  }, [activeSessionId, isAuthenticated, navigate, resolveSessionConfig, sessionMeta?.title])
+
+  const hangupVoiceSession = useCallback(async () => {
+    setIsProcessing(true)
+    try {
+      await aiCallService.hangup()
+    } finally {
+      setIsProcessing(false)
+      setAgentState('ended')
+    }
+  }, [])
+
+  const toggleMute = useCallback(() => {
+    const nextMuted = !isMuted
+    aiCallService.mute(nextMuted)
+    setIsMuted(nextMuted)
+  }, [isMuted])
+
+  const toggleSpeaker = useCallback(() => {
+    const nextSpeakerOn = !speakerOn
+    aiCallService.setSpeaker(nextSpeakerOn)
+    setSpeakerOn(nextSpeakerOn)
+  }, [speakerOn])
+
+  const refreshTokens = useCallback(async () => {
+    setIsProcessing(true)
+    try {
+      // Prefer lightweight RTC token refresh when a session is active
+      if (sessionConfig?.session.id) {
+        const refreshed = await aiCallService.refreshRtcToken()
+        if (refreshed) {
+          setError(null)
+          setIsProcessing(false)
+          return
+        }
+      }
+
+      // Fallback to full session bootstrap if refresh is not supported
+      await resolveSessionConfig(activeSessionId, sessionMeta?.title)
+      setError(null)
+    } catch (e) {
+      console.error('Failed to refresh tokens:', e)
+      setError('刷新通话令牌失败，请稍后再试')
+    } finally {
+      setIsProcessing(false)
+    }
+  }, [activeSessionId, resolveSessionConfig, sessionMeta?.title])
+
+  const callActive =
+    agentState === 'listening' ||
+    agentState === 'speaking' ||
+    agentState === 'thinking'
+
+  const stageTitle =
+    (sessionMeta?.current_kb_step && KB_STAGE_COPY[sessionMeta.current_kb_step]) ||
+    KB_STAGE_COPY[sessionConfig?.session.current_kb_step ?? 1] ||
+    '阶段 1 · 建立安全感和信任氛围'
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 relative overflow-hidden">
-      {/* 装饰性背景元素 */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-indigo-200/20 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-purple-200/20 rounded-full blur-3xl"></div>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-rose-50">
+      <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col min-h-screen">
+        <header className="flex items-center justify-between mb-8">
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            className="inline-flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 mr-2" />
+            返回控制台
+          </button>
+          <div className="text-right">
+            <p className="text-sm text-gray-500">
+              {sessionMeta?.title || sessionConfig?.session.title || '语音心理咨询会话'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {stageTitle}
+            </p>
+          </div>
+        </header>
 
-      {/* 头部 */}
-      <div className="relative z-10 bg-white/80 backdrop-blur-md border-b border-gray-200/50 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="p-2 hover:bg-gray-100 rounded-xl transition-all duration-200"
-            >
-              <ArrowLeft className="w-5 h-5 text-gray-600" />
-            </button>
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">
-                {session?.title || 'AI语音咨询'}
-              </h1>
-              <div className="flex items-center space-x-2 mt-1">
-                <div className="flex space-x-1">
-                  {[1, 2, 3, 4, 5].map((step) => (
-                    <div
-                      key={step}
-                      className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                        step <= (session?.current_kb_step || 1)
-                          ? 'bg-indigo-600 scale-110'
-                          : 'bg-gray-300'
-                      }`}
-                    />
-                  ))}
+        <main className="flex-1 flex flex-col lg:flex-row gap-8">
+          <section className="flex-1 bg-white/80 backdrop-blur rounded-3xl shadow-lg p-6 flex flex-col">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-900">实时对话记录</h2>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleSpeaker}
+                  className="inline-flex items-center justify-center w-10 h-10 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition"
+                  title={speakerOn ? '关闭扬声器' : '打开扬声器'}
+                >
+                  {speakerOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  className={`inline-flex items-center justify-center w-10 h-10 rounded-full border transition ${
+                    isMuted
+                      ? 'border-rose-300 text-rose-500 bg-rose-50'
+                      : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                  }`}
+                  title={isMuted ? '取消静音' : '麦克风静音'}
+                >
+                  <Mic className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={refreshTokens}
+                  disabled={isProcessing}
+                  className="inline-flex items-center justify-center w-10 h-10 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  title="刷新会话配置"
+                >
+                  <RefreshCcw className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {conversationHistory.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex ${message.sender_type === 'assistant' ? 'justify-start' : 'justify-end'}`}
+                >
+                  <div
+                    className={`max-w-[75%] rounded-2xl px-4 py-3 shadow-sm ${
+                      message.sender_type === 'assistant'
+                        ? 'bg-indigo-50 text-gray-900 border border-indigo-100'
+                        : 'bg-emerald-50 text-gray-900 border border-emerald-100'
+                    }`}
+                  >
+                    <div className="text-sm leading-relaxed">{message.content}</div>
+                    <div className="text-xs text-gray-400 mt-2 text-right">
+                      {formatDisplayTime(message.created_at)}
+                    </div>
+                  </div>
                 </div>
-                <span className="text-sm text-gray-500 font-medium">
-                  步骤 {session?.current_kb_step || 1}/5
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          </section>
+
+          <section className="lg:w-[420px] flex flex-col items-center text-center">
+            <div className="w-full bg-white/90 backdrop-blur rounded-3xl shadow-xl p-8 border border-indigo-50">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">AI 心理咨询师</h3>
+                <span
+                  className={`px-3 py-1 text-xs rounded-full ${
+                    callActive
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : agentState === 'connecting'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  {agentState === 'connecting' && '正在连接'}
+                  {agentState === 'listening' && '倾听中'}
+                  {agentState === 'thinking' && '思考中'}
+                  {agentState === 'speaking' && '表达中'}
+                  {agentState === 'ended' && '已结束'}
+                  {agentState === 'error' && '出现错误'}
+                  {(agentState === 'idle' || agentState === 'ended') && !callActive && '等待开始'}
                 </span>
               </div>
-            </div>
-          </div>
 
-          <div className="flex items-center space-x-2">
-            <div className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-full text-sm font-medium">
-              语音模式
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 错误提示 */}
-      {error && (
-        <div className="relative z-10 mx-6 mt-4 bg-red-50 border border-red-200 rounded-2xl p-4 animate-in slide-in-from-top">
-          <p className="text-red-700 text-sm font-medium">{error}</p>
-        </div>
-      )}
-
-      {/* 主内容区域 - AI文字显示 */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-8 py-12">
-        {/* AI回复文字显示区域 */}
-        <div className="w-full max-w-3xl mb-12">
-          {currentAIMessage ? (
-            <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-gray-200/50 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex items-start space-x-4">
-                <div className={`p-3 rounded-2xl transition-all duration-300 ${
-                  isAISpeaking ? 'bg-indigo-600 scale-110' : 'bg-indigo-100'
-                }`}>
-                  <Volume2 className={`w-6 h-6 transition-colors duration-300 ${
-                    isAISpeaking ? 'text-white animate-pulse' : 'text-indigo-600'
-                  }`} />
-                </div>
-                <div className="flex-1">
-                  <p className="text-gray-900 text-lg leading-relaxed font-light">
-                    {currentAIMessage}
+              <div className="min-h-[150px] bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 rounded-2xl p-6 flex items-center justify-center">
+                {isLoading ? (
+                  <div className="flex flex-col items-center gap-3 text-gray-500">
+                    <Loader2 className="w-7 h-7 animate-spin" />
+                    <p className="text-sm">正在加载会话配置...</p>
+                  </div>
+                ) : currentAIMessage ? (
+                  <p className="text-gray-800 text-base leading-relaxed">{currentAIMessage}</p>
+                ) : (
+                  <p className="text-gray-400 text-sm">
+                    {callActive ? '正在等待实时语音...' : '点击下方按钮开始实时语音咨询'}
                   </p>
-                  {isAISpeaking && (
-                    <div className="flex items-center space-x-2 mt-4">
-                      <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      <span className="text-sm text-indigo-600 font-medium ml-2">AI正在说话...</span>
-                    </div>
-                  )}
+                )}
+              </div>
+
+              {error && (
+                <div className="mt-4 p-3 text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-xl">
+                  {error}
                 </div>
+              )}
+
+              <div className="mt-10">
+                <button
+                  type="button"
+                  onClick={callActive ? hangupVoiceSession : startVoiceSession}
+                  disabled={isProcessing || isLoading}
+                  className={`relative w-48 h-48 rounded-full shadow-xl transition transform border-4 ${
+                    callActive
+                      ? 'bg-gradient-to-br from-rose-500 to-rose-600 border-rose-200 hover:scale-105'
+                      : 'bg-gradient-to-br from-indigo-600 to-purple-600 border-indigo-200 hover:scale-105'
+                  } ${isProcessing ? 'cursor-progress opacity-80' : 'cursor-pointer'}`}
+                >
+                  <div className="flex items-center justify-center h-full text-white">
+                    {isProcessing ? (
+                      <Loader2 className="w-20 h-20 animate-spin" />
+                    ) : callActive ? (
+                      <PhoneOff className="w-20 h-20" />
+                    ) : (
+                      <Mic className="w-20 h-20" />
+                    )}
+                  </div>
+                </button>
+
+                <p className="mt-6 text-sm text-gray-500">
+                  {callActive
+                    ? '点击结束当前语音通话'
+                    : isProcessing
+                      ? '正在准备语音通话...'
+                      : '点击开始实时语音咨询'}
+                </p>
               </div>
             </div>
-          ) : (
-            <div className="text-center text-gray-400">
-              <p className="text-lg">等待AI回复...</p>
-            </div>
-          )}
-        </div>
-
-        {/* 大圆形语音按钮 */}
-        <div className="relative">
-          {/* 外围动画圆环 */}
-          {(isRecording || isAISpeaking) && (
-            <>
-              <div className={`absolute inset-0 rounded-full animate-ping ${
-                isRecording ? 'bg-red-400/30' : 'bg-indigo-400/30'
-              }`} style={{ animationDuration: '2s' }}></div>
-              <div className={`absolute inset-0 rounded-full animate-pulse ${
-                isRecording ? 'bg-red-400/20' : 'bg-indigo-400/20'
-              }`} style={{ animationDuration: '3s' }}></div>
-            </>
-          )}
-
-          {/* 主按钮 */}
-          <button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={isProcessing || isAISpeaking}
-            className={`relative w-48 h-48 rounded-full shadow-2xl transition-all duration-500 transform ${
-              isRecording
-                ? 'bg-gradient-to-br from-red-500 to-red-600 scale-110'
-                : isAISpeaking
-                ? 'bg-gradient-to-br from-green-500 to-green-600 scale-105'
-                : isProcessing
-                ? 'bg-gradient-to-br from-yellow-500 to-yellow-600'
-                : 'bg-gradient-to-br from-indigo-600 to-purple-600 hover:scale-110 hover:shadow-3xl'
-            } ${
-              (isProcessing || isAISpeaking) ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
-            }`}
-          >
-            <div className="flex items-center justify-center h-full">
-              {isProcessing ? (
-                <Loader2 className="w-20 h-20 text-white animate-spin" />
-              ) : isRecording ? (
-                <MicOff className="w-20 h-20 text-white animate-pulse" />
-              ) : isAISpeaking ? (
-                <Volume2 className="w-20 h-20 text-white animate-pulse" />
-              ) : (
-                <Mic className="w-20 h-20 text-white" />
-              )}
-            </div>
-          </button>
-        </div>
-
-        {/* 状态提示文字 */}
-        <div className="mt-8 text-center">
-          <p className={`text-lg font-medium transition-colors duration-300 ${
-            isRecording
-              ? 'text-red-600'
-              : isAISpeaking
-              ? 'text-green-600'
-              : isProcessing
-              ? 'text-yellow-600'
-              : 'text-gray-600'
-          }`}>
-            {isRecording
-              ? '正在录音... 点击停止'
-              : isAISpeaking
-              ? 'AI正在说话'
-              : isProcessing
-              ? '正在处理您的回复...'
-              : '点击开始对话'
-            }
-          </p>
-          {!isRecording && !isAISpeaking && !isProcessing && (
-            <p className="text-sm text-gray-400 mt-2">
-              按住麦克风按钮说话，松开发送
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* 底部提示 */}
-      <div className="relative z-10 pb-8 text-center text-sm text-gray-500">
-        <p>AI咨询师会主动引导您进行心理咨询对话</p>
+          </section>
+        </main>
       </div>
     </div>
   )

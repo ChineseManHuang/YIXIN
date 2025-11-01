@@ -1,5 +1,6 @@
-// Direct PostgreSQL connection (replacing Supabase)
+// Direct PostgreSQL connection for Alibaba Cloud RDS
 import { Pool } from 'pg'
+import { env } from './env.js'
 
 // JSON types
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
@@ -7,8 +8,8 @@ export type JsonRecord = Record<string, JsonValue>
 
 // Database connection pool
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: false, // RDS instance does not have SSL enabled
+  connectionString: env.DATABASE_URL,
+  ssl: false, // The current RDS instance does not require SSL
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
@@ -37,16 +38,6 @@ export async function queryOne<T = any>(text: string, params?: any[]): Promise<T
   const result = await pool.query(text, params)
   return result.rows[0] || null
 }
-
-// Legacy exports for backward compatibility (these will be replaced gradually)
-export const supabase = {
-  from: (table: string) => {
-    console.warn(`[database] Direct Supabase client usage detected for table: ${table}. Consider using pg query instead.`)
-    throw new Error('Supabase client is no longer available. Use pg queries instead.')
-  }
-}
-export const supabaseAdmin = supabase
-export const supabaseAnonClient = supabase
 
 // 数据库表名常量
 export const TABLES = {
