@@ -23,6 +23,7 @@ export interface VoiceSessionConfig {
     appId: string
     region: string
     bailianAppParams: Record<string, unknown> | string
+    voiceId?: string
   }
 }
 

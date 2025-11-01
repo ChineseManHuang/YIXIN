@@ -51,6 +51,7 @@ const bailianAppId = getEnvValue('BAILIAN_APP_ID', { fallback: '' })
 const bailianApiKey = getEnvValue('BAILIAN_API_KEY', { fallback: '' })
 const bailianEndpoint = getEnvValue('BAILIAN_ENDPOINT', { fallback: '' })
 const bailianAgentId = getEnvValue('BAILIAN_AGENT_ID', { fallback: '' })
+const bailianVoiceId = getEnvValue('BAILIAN_TTS_VOICE_ID', { fallback: '' })
 const alibabaVoiceApiKey = getEnvValue('ALIBABA_VOICE_API_KEY', { fallback: '' })
 const alibabaVoiceApiUrl = getEnvValue('ALIBABA_VOICE_API_URL', { fallback: '' })
 const backendDeployHookUrl = getEnvValue('BACKEND_DEPLOY_HOOK_URL')
@@ -76,6 +77,7 @@ export const env = {
   BAILIAN_API_KEY: bailianApiKey,
   BAILIAN_ENDPOINT: bailianEndpoint,
   BAILIAN_AGENT_ID: bailianAgentId,
+  BAILIAN_TTS_VOICE_ID: bailianVoiceId,
   ALIBABA_VOICE_API_KEY: alibabaVoiceApiKey,
   ALIBABA_VOICE_API_URL: alibabaVoiceApiUrl,
   BACKEND_DEPLOY_HOOK_URL: backendDeployHookUrl,

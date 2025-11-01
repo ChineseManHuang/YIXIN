@@ -22,6 +22,7 @@ export interface VoiceSessionBootstrap {
     appId: string
     region: string
     bailianAppParams: Record<string, unknown> | string
+    voiceId?: string
   }
   sessionId: string
   userId: string
@@ -212,6 +213,24 @@ export class AICallService {
 
       const agentConfig = new AICallAgentConfig()
       const bailianParams = ensureBailianParamsObject(config.agent.bailianAppParams)
+
+      agentConfig.enablePushToTalk = false
+      agentConfig.enableIntelligentSegment = true
+      agentConfig.agentGracefulShutdown = true
+
+      if (agentConfig.ttsConfig) {
+        if (typeof config.agent.voiceId === 'string' && config.agent.voiceId.trim().length > 0) {
+          agentConfig.ttsConfig.agentVoiceId = config.agent.voiceId.trim()
+        }
+        if (!agentConfig.ttsConfig.speechRate || agentConfig.ttsConfig.speechRate <= 0) {
+          agentConfig.ttsConfig.speechRate = 1
+        }
+      }
+
+      if (agentConfig.interruptConfig) {
+        agentConfig.interruptConfig.enableVoiceInterrupt = true
+      }
+
       if (agentConfig.llmConfig) {
         agentConfig.llmConfig.bailianAppParams = bailianParams as any
       }

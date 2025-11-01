@@ -286,6 +286,7 @@ const VoiceConsultation: React.FC = () => {
           appId: config.agent.appId,
           region: config.agent.region ?? 'cn-hangzhou',
           bailianAppParams: config.agent.bailianAppParams,
+          voiceId: config.agent.voiceId,
         },
         sessionId: config.session.id,
         userId: config.user.id,

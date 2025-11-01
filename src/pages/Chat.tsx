@@ -8,8 +8,8 @@ import { useAuthStore } from '../lib/auth-store'
 import { api } from '../lib/api'
 import type { Message as ApiMessage, Session as ApiSession } from '../lib/api'
 import { useSocket, useTypingIndicator } from '../hooks/useSocket'
-import VoiceRecorder from '../components/VoiceRecorder'
 import VoicePlayer from '../components/VoicePlayer'
+import VoiceCallOverlay from '../components/VoiceCallOverlay'
 import {
   Send,
   Mic,
@@ -62,7 +62,7 @@ const Chat: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false)
+  const [showVoiceOverlay, setShowVoiceOverlay] = useState(false)
   
   // Socket.io 实时功能
   const {
@@ -210,14 +210,22 @@ const Chat: React.FC = () => {
     }
   }
 
-  // 语音录制功能
+  // 语音实时会话入口
   const handleVoiceToggle = () => {
-    setShowVoiceRecorder(!showVoiceRecorder)
+    if (!sessionId) {
+      setError('请先选择或创建一个咨询会话，再开启语音咨询')
+      return
+    }
+    setShowVoiceOverlay(true)
   }
 
-  const handleVoiceTranscription = (transcription: string) => {
-    setNewMessage(transcription)
-    setShowVoiceRecorder(false)
+  const handleRealtimeLoggedMessage = (message: ApiMessage) => {
+    setMessages((prev) => {
+      if (prev.some((item) => item.id === message.id)) {
+        return prev
+      }
+      return [...prev, mapApiMessage(message)]
+    })
   }
   
   // 处理输入变化
@@ -463,7 +471,7 @@ const Chat: React.FC = () => {
             <button
               onClick={handleVoiceToggle}
               className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
-                showVoiceRecorder
+                showVoiceOverlay
                   ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
                   : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
               }`}
@@ -486,13 +494,13 @@ const Chat: React.FC = () => {
           </div>
           
           {/* 语音录制器 */}
-          {showVoiceRecorder && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-              <VoiceRecorder
-                onTranscription={handleVoiceTranscription}
-                onClose={() => setShowVoiceRecorder(false)}
-              />
-            </div>
+          {showVoiceOverlay && sessionId && (
+            <VoiceCallOverlay
+              sessionId={sessionId}
+              sessionTitle={session?.title}
+              onClose={() => setShowVoiceOverlay(false)}
+              onMessageLogged={handleRealtimeLoggedMessage}
+            />
           )}
         </div>
       </div>

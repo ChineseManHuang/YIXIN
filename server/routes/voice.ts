@@ -154,6 +154,8 @@ router.post('/session-config', authenticateToken, async (req: Request, res: Resp
       memory_id: `user_${userId}`,
     }
 
+    const preferredVoiceId = env.BAILIAN_TTS_VOICE_ID?.trim()
+
     const rtc = generateRtcToken({
       channelId: sessionId,
       userId,
@@ -184,6 +186,7 @@ router.post('/session-config', authenticateToken, async (req: Request, res: Resp
         appId: env.BAILIAN_APP_ID,
         bailianAppParams,
         region: env.RTC_REGION,
+        voiceId: preferredVoiceId || undefined,
       },
     }
 
